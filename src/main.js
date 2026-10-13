@@ -13,11 +13,9 @@ const banner = $('banner');
 
 let W = innerWidth, H = innerHeight, DPR = 1;
 function sizeFx() {
-  W = innerWidth;
-  H = innerHeight;
+  W = innerWidth; H = innerHeight;
   DPR = Math.min(devicePixelRatio || 1, 2);
-  fxCanvas.width = W * DPR;
-  fxCanvas.height = H * DPR;
+  fxCanvas.width = W * DPR; fxCanvas.height = H * DPR;
 }
 sizeFx();
 addEventListener('resize', sizeFx);
@@ -30,13 +28,13 @@ function showBanner(msg, info = false) {
 let toastTimer = 0;
 function toast(msg) {
   const el = $('toast');
+  if (!el) return;
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 1600);
 }
 
-// ------------------------------------------------------------------ scene + UI
 let scene;
 try {
   scene = new HoloScene($('scene'), MODELS);
@@ -49,80 +47,101 @@ try {
 const ui = { skeleton: true, labels: true, feed: false };
 let trackingState = 'Off';
 
-// model chips grouped by category
 const chips = $('chips');
-for (const cat of [...new Set(MODELS.map((m) => m.category))]) {
-  const grp = document.createElement('div');
-  grp.className = 'grp';
-  const gl = document.createElement('span');
-  gl.className = 'gl';
-  gl.textContent = cat;
-  grp.appendChild(gl);
-  MODELS.forEach((m, i) => {
-    if (m.category !== cat) return;
-    const b = document.createElement('button');
-    b.textContent = m.name;
-    b.dataset.i = i;
-    b.onclick = () => scene.setModel(i);
-    grp.appendChild(b);
-  });
-  chips.appendChild(grp);
+if (chips && MODELS.length > 0) {
+  for (const cat of [...new Set(MODELS.map((m) => m.category || 'General'))]) {
+    const grp = document.createElement('div');
+    grp.className = 'grp';
+    const gl = document.createElement('span');
+    gl.className = 'gl';
+    gl.textContent = cat;
+    grp.appendChild(gl);
+    MODELS.forEach((m, i) => {
+      if ((m.category || 'General') !== cat) return;
+      const b = document.createElement('button');
+      b.textContent = m.name || `Model ${i}`;
+      b.dataset.i = i;
+      b.onclick = () => scene.setModel(i);
+      grp.appendChild(b);
+    });
+    chips.appendChild(grp);
+  }
 }
 
 scene.onModel = (i, def, g) => {
-  $('m-name').textContent = def.name;
-  $('m-sub').textContent = def.subtitle;
-  $('m-cat').textContent = def.category;
-  $('m-count').textContent = `${g.meta.length} parts`;
-  chips.querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.i === i));
+  const mName = $('m-name');
+  const mSub = $('m-sub');
+  const mCat = $('m-cat');
+  const mCount = $('m-count');
+  if (mName) mName.textContent = def.name || 'Model';
+  if (mSub) mSub.textContent = def.subtitle || '';
+  if (mCat) mCat.textContent = def.category || 'General';
+  if (mCount) mCount.textContent = `${g.meta.length} parts`;
+  if (chips) {
+    chips.querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.i === i));
+  }
   showPart(-1);
-  toast(def.name);
+  toast(def.name || 'Model');
 };
-// initial UI for model 0 (constructor loaded it before the callback existed)
-scene.onModel(scene.index, MODELS[scene.index], scene.cache.get(scene.index));
+
+if (scene.models.length > 0 && scene.onModel && scene.cache.size > 0) {
+  scene.onModel(scene.index, MODELS[scene.index], scene.cache.get(scene.index));
+}
 
 function showPart(i) {
-  const p = i >= 0 ? scene.parts[i] : null;
-  $('pc-name').textContent = p ? p.name : 'No part selected';
-  $('pc-desc').textContent = p ? p.desc : 'Point at a part, or click one, to read what it does.';
-  $('pc-dot').style.background = p ? p.color : '#555a70';
+  const p = i >= 0 && scene.parts ? scene.parts[i] : null;
+  const pcName = $('pc-name');
+  const pcDesc = $('pc-desc');
+  const pcDot = $('pc-dot');
+  if (pcName) pcName.textContent = p ? p.name : 'No part selected';
+  if (pcDesc) pcDesc.textContent = p ? p.desc : 'Point at a part, or click one, to read what it does.';
+  if (pcDot) pcDot.style.background = p ? p.color : '#555a70';
 }
 
 const rExplode = $('r-explode');
 const rInt = $('r-int');
 let draggingExplode = false;
-rExplode.addEventListener('pointerdown', () => (draggingExplode = true));
+if (rExplode) rExplode.addEventListener('pointerdown', () => (draggingExplode = true));
 addEventListener('pointerup', () => (draggingExplode = false));
-rExplode.addEventListener('input', () => (scene.explodeTarget = rExplode.value / 100));
-rInt.addEventListener('input', () => {
-  scene.intensity = rInt.value / 100;
-  $('v-int').textContent = rInt.value + '%';
+if (rExplode) rExplode.addEventListener('input', () => { if (scene) scene.explodeTarget = rExplode.value / 100; });
+if (rInt) rInt.addEventListener('input', () => {
+  if (scene) scene.intensity = rInt.value / 100;
+  const vInt = $('v-int');
+  if (vInt) vInt.textContent = rInt.value + '%';
 });
 
-$('b-explode').onclick = () => (scene.explodeTarget = scene.explodeTarget > 0.5 ? 0 : 1);
-$('b-spin').onclick = () => {
-  scene.autoSpin = !scene.autoSpin;
-  $('b-spin').classList.toggle('on', scene.autoSpin);
+const bExplode = $('b-explode');
+const bSpin = $('b-spin');
+const bReset = $('b-reset');
+const bNext = $('b-next');
+if (bExplode) bExplode.onclick = () => { if (scene) scene.explodeTarget = scene.explodeTarget > 0.5 ? 0 : 1; };
+if (bSpin) bSpin.onclick = () => {
+  if (scene) {
+    scene.autoSpin = !scene.autoSpin;
+    bSpin.classList.toggle('on', scene.autoSpin);
+  }
 };
-$('b-reset').onclick = () => {
-  scene.resetView();
+if (bReset) bReset.onclick = () => {
+  if (scene) scene.resetView();
   showPart(-1);
 };
-$('b-next').onclick = () => scene.next();
+if (bNext) bNext.onclick = () => { if (scene) scene.next(); };
 
 function toggle(id, key, after) {
-  $(id).onclick = () => {
+  const el = $(id);
+  if (!el) return;
+  el.onclick = () => {
     ui[key] = !ui[key];
-    $(id).classList.toggle('on', ui[key]);
+    el.classList.toggle('on', ui[key]);
     after?.();
   };
 }
 toggle('t-feed', 'feed', () => document.body.classList.toggle('feed', ui.feed && camOn));
 toggle('t-skel', 'skeleton');
 toggle('t-labels', 'labels');
-$('t-full').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
+const tFull = $('t-full');
+if (tFull) tFull.onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
 
-// ------------------------------------------------------------------ camera + tracking
 const tracker = new HandTracker();
 const engine = new GestureEngine();
 let camOn = false;
@@ -130,7 +149,8 @@ let lastVideoTime = -1;
 let perc = { hands: [] };
 
 async function startCamera() {
-  $('start').classList.add('gone');
+  const start = $('start');
+  if (start) start.classList.add('gone');
   setTracking('Starting…', 'warn');
   if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
     enterMouseMode('Camera needs http://localhost or https.');
@@ -142,7 +162,8 @@ async function startCamera() {
     await video.play();
     camOn = true;
     ui.feed = true;
-    $('t-feed').classList.add('on');
+    const tFeed = $('t-feed');
+    if (tFeed) tFeed.classList.add('on');
     document.body.classList.add('feed');
   } catch (e) {
     console.warn(e);
@@ -169,17 +190,18 @@ function enterMouseMode(msg) {
 function setTracking(text, cls) {
   trackingState = text;
   const el = $('s-track');
-  el.textContent = text;
-  el.className = cls || '';
+  if (el) { el.textContent = text; el.className = cls || ''; }
 }
 
-$('btn-cam').onclick = startCamera;
-$('btn-mouse').onclick = () => {
-  $('start').classList.add('gone');
+const btnCam = $('btn-cam');
+const btnMouse = $('btn-mouse');
+if (btnCam) btnCam.onclick = startCamera;
+if (btnMouse) btnMouse.onclick = () => {
+  const start = $('start');
+  if (start) start.classList.add('gone');
   enterMouseMode('');
 };
 
-/** raw camera landmark -> viewport 0..1 (mirrored, matches object-fit: cover) */
 function mapPoint(p) {
   const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
   const s = Math.max(W / vw, H / vh);
@@ -187,7 +209,6 @@ function mapPoint(p) {
   return { x: ((1 - p.x) * vw * s + ox) / W, y: (p.y * vh * s + oy) / H };
 }
 
-// ------------------------------------------------------------------ gesture -> action
 let zoomRef = null;
 let grab = null;
 let lastHover = { i: -1, t: 0 };
@@ -209,9 +230,9 @@ function endGrab() {
 
 function control(t, dt) {
   const live = perc.hands.filter((h) => !h.held);
-  $('s-hands').textContent = String(live.length);
+  const sHands = $('s-hands');
+  if (sHands) sHands.textContent = String(live.length);
 
-  // two hands: distance between palms = zoom
   if (live.length >= 2) {
     const a = live[0].palm, b = live[1].palm;
     const dist = Math.hypot((a.x - b.x) * W, (a.y - b.y) * H);
@@ -243,9 +264,7 @@ function control(t, dt) {
   const palmPx = { x: h.palm.x * W, y: h.palm.y * H };
 
   if (g === 'OPEN' || g === 'FIST' || g === 'NONE') {
-    // openness drives the explosion
     scene.explodeTarget = g === 'FIST' ? 0 : clamp((h.openness - 0.12) / 0.78, 0, 1);
-    // moving the hand rotates the model
     const prev = prevPalm.get(h.id);
     if (prev) {
       const dx = palmPx.x - prev.x, dy = palmPx.y - prev.y;
@@ -294,12 +313,10 @@ function control(t, dt) {
   prevPalm.set(h.id, palmPx);
 }
 
-// ------------------------------------------------------------------ mouse + keyboard
 let draggingMouse = false;
 let mouseStart = null;
 let mouseLast = null;
 const onUi = (e) => e.target.closest && e.target.closest('#panel,#chips,#toolbar,#start');
-
 addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || onUi(e)) return;
   draggingMouse = true;
@@ -307,14 +324,16 @@ addEventListener('pointerdown', (e) => {
 });
 addEventListener('pointermove', (e) => {
   if (!draggingMouse) return;
-  scene.holdVel = true;
-  scene.rotateBy((e.clientX - mouseLast.x) * 0.006, (e.clientY - mouseLast.y) * 0.004, 1 / 60);
+  if (scene) {
+    scene.holdVel = true;
+    scene.rotateBy((e.clientX - mouseLast.x) * 0.006, (e.clientY - mouseLast.y) * 0.004, 1 / 60);
+  }
   mouseLast = { x: e.clientX, y: e.clientY };
 });
 addEventListener('pointerup', (e) => {
   if (!draggingMouse) return;
   draggingMouse = false;
-  scene.holdVel = false;
+  if (scene) scene.holdVel = false;
   if (Math.hypot(e.clientX - mouseStart.x, e.clientY - mouseStart.y) < 5) {
     const idx = scene.pick(e.clientX, e.clientY, 80);
     scene.setSel(idx === scene.sel ? -1 : idx);
@@ -323,10 +342,11 @@ addEventListener('pointerup', (e) => {
 });
 addEventListener('wheel', (e) => {
   if (onUi(e)) return;
-  scene.zoomBy(Math.exp(-e.deltaY * 0.0012));
+  if (scene) scene.zoomBy(Math.exp(-e.deltaY * 0.0012));
 }, { passive: true });
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (!scene) return;
   if (e.key === ' ') {
     e.preventDefault();
     scene.explodeTarget = scene.explodeTarget > 0.5 ? 0 : 1;
@@ -336,9 +356,7 @@ addEventListener('keydown', (e) => {
   else if (e.key >= '1' && e.key <= String(MODELS.length)) scene.setModel(+e.key - 1);
 });
 
-// ------------------------------------------------------------------ overlay drawing
 const ringR = new Map();
-
 function drawHand(h) {
   const pts = h.lm.map((p) => ({ x: p.x * W, y: p.y * H }));
   ctx.save();
@@ -399,7 +417,6 @@ function drawRing(h) {
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-    // white arc = how far it is exploded
     const e = clamp(scene.explode, 0, 1);
     if (e > 0.01) {
       ctx.shadowColor = 'rgba(255,255,255,0.9)';
@@ -453,27 +470,27 @@ function drawLabels() {
   const place = (list, colX, dir) => {
     list.sort((a, b) => a.y - b.y);
     const ys = list.map((p) => p.y);
-    for (let i = 1; i < ys.length; i++) if (ys[i] < ys[i - 1] + 20) ys[i] = ys[i - 1] + 20;
-    const over = ys.length ? ys[ys.length - 1] - (H - 90) : 0;
+    for (let i = 1; i < ys.length; i++) if (ys[i] < ys[i-1] + 20) ys[i] = ys[i-1] + 20;
+    const over = ys.length ? ys[ys.length-1] - (H-90) : 0;
     if (over > 0) for (let i = 0; i < ys.length; i++) ys[i] -= over;
     list.forEach((p, k) => {
       const hot = p.i === scene.hover || p.i === scene.sel;
-      const ly = clamp(ys[k], 24, H - 24);
+      const ly = clamp(ys[k], 24, H-24);
       ctx.strokeStyle = hot ? p.color : 'rgba(255,255,255,0.38)';
       ctx.lineWidth = hot ? 1.6 : 1;
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
-      ctx.lineTo(colX - dir * 16, ly);
+      ctx.lineTo(colX - dir*16, ly);
       ctx.lineTo(colX, ly);
       ctx.stroke();
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, hot ? 4 : 2.4, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, hot ? 4 : 2.4, 0, Math.PI*2);
       ctx.fill();
       ctx.fillStyle = hot ? '#fff' : 'rgba(255,255,255,0.82)';
       ctx.font = `${hot ? 600 : 500} ${hot ? 13 : 12}px ui-sans-serif, system-ui, "Segoe UI", sans-serif`;
       ctx.textAlign = dir > 0 ? 'left' : 'right';
-      ctx.fillText(p.name, colX + dir * 6, ly);
+      ctx.fillText(p.name, colX + dir*6, ly);
     });
   };
   place(right, colR, 1);
@@ -484,31 +501,33 @@ function drawLabels() {
 function drawOverlay() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  if (ui.labels) drawLabels();
+  const tLabels = $('t-labels');
+  const tSkel = $('t-skel');
+  if (tLabels ? ui.labels : ui.labels) drawLabels();
   const live = perc.hands.filter((h) => !h.held);
   if (ui.skeleton) for (const h of live) drawHand(h);
   for (const h of live) drawRing(h);
   if (live.length >= 2) drawZoom(live[0], live[1]);
 }
 
-// ------------------------------------------------------------------ main loop
 let lastT = performance.now() / 1000;
 function frame(now) {
   const t = now / 1000;
   const dt = Math.min(0.05, Math.max(0.001, t - lastT));
   lastT = t;
-
   if (camOn && tracker.ready && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const hands = tracker.detect(video, now);
     perc = engine.update(hands, t, mapPoint, (video.videoWidth || 16) / (video.videoHeight || 9));
   }
   control(t, dt);
-
-  if (!draggingExplode) rExplode.value = Math.round(clamp(scene.explode, 0, 1) * 100);
-  $('v-explode').textContent = Math.round(clamp(scene.explode, 0, 1) * 100) + '%';
-  $('b-explode').textContent = scene.explodeTarget > 0.5 ? 'Assemble' : 'Explode';
-
+  if (!draggingExplode && rExplode) {
+    rExplode.value = Math.round(clamp(scene.explode, 0, 1) * 100);
+    const vExp = $('v-explode');
+    if (vExp) vExp.textContent = Math.round(clamp(scene.explode, 0, 1) * 100) + '%';
+  }
+  const bExp = $('b-explode');
+  if (bExp) bExp.textContent = scene.explodeTarget > 0.5 ? 'Assemble' : 'Explode';
   scene.update(dt, t);
   drawOverlay();
   requestAnimationFrame(frame);
