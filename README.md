@@ -1,5 +1,5 @@
-# HoloHand (gesture-agent-3d)
-## Dev / Creator = tubakhxn
+# Holo-Interparts-3D
+## Dev / Creator = MohammedAH10
 
 Control exploded 3D models with your bare hands. Your webcam is the background, a hand skeleton and a gold ring follow your hand,
 and each model is a glowing point cloud that pulls apart into labelled parts so you can see what is inside.
@@ -11,7 +11,7 @@ Everything runs in the browser: MediaPipe Hand Landmarker + Three.js. No backend
 Needs Node.js 18+ and Chrome or Edge.
 
 ```bash
-cd gesture-agent-3d
+cd holo-interparts-3d
 npm install
 npm run dev
 ```
