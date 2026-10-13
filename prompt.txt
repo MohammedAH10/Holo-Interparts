@@ -1,0 +1,3 @@
+
+I renamed the project to Holo-Interparrts-3d now init git and start implementing this in 10 commits and push to main, Dont implement the 2 new .md files we created yet okay, we will deal with that later. here is the remote connection string 
+git@github.com:MohammedAH10/Holo-Interparts.git
