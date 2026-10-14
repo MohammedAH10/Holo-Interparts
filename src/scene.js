@@ -139,7 +139,23 @@ export class HoloScene {
     return this.currentPack;
   }
 
-  appendPart() {}
+  appendPart(partData) {
+    if (!this.parts) this.parts = [];
+    if (partData) {
+      const rgb = hexRgb(partData.color || '#ffaa44');
+      this.parts.push({ name: partData.name || 'Part', desc: partData.desc || '', color: partData.color || '#ffaa44', anchors: [{ a: [0,0,0], d: [0,0,0] }], samples: new Float32Array([0,0,0,0,0,0]) });
+      if (this.onModel) {
+        const g = this._geometry(this.index);
+        if (this.points) {
+          this.points.geometry.dispose();
+          this.points.geometry = g.geo;
+        }
+        this.parts = g.meta;
+        this.fit = g.fit;
+        this.count = g.count;
+      }
+    }
+  }
 
   _geometry(i) {
     if (this.cache.has(i)) return this.cache.get(i);
