@@ -4,6 +4,11 @@ import { MODELS } from './models/index.js';
 import { HandTracker } from './handTracking.js';
 import { GestureEngine, HAND_CONNECTIONS } from './gestureEngine.js';
 import { clamp } from './utils.js';
+import { addPartFromFile } from './editing/addPart.js';
+import { loadModelFile } from './import/loaders.js';
+import { flattenAssembly } from './import/assembly.js';
+import { sampleMesh, meshArea, groupBounds, centroid, recenterChunks } from './import/sampler.ext.js';
+import * as THREE from 'three';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -126,6 +131,89 @@ if (bReset) bReset.onclick = () => {
   showPart(-1);
 };
 if (bNext) bNext.onclick = () => { if (scene) scene.next(); };
+
+const bImport = $('b-import');
+const bAddPart = $('b-add');
+const cadInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx' });
+const partInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx' });
+
+if (bImport) bImport.onclick = () => cadInput.click();
+cadInput.onchange = async () => {
+  const file = cadInput.files?.[0];
+  cadInput.value = '';
+  if (!file || !scene) return;
+  try {
+    toast(`Importing ${file.name}...`);
+    const root = await loadModelFile(file);
+    const groups = flattenAssembly(root);
+    if (!groups.length) throw new Error('No geometry found');
+    const bounds = groupBounds(groups);
+    const c = bounds.getCenter(new THREE.Vector3());
+    let area = 0;
+    for (const g of groups) {
+      const meshes = g.meshes || [g.mesh].filter(Boolean);
+      for (const m of meshes) if (m.geometry) area += meshArea(m.geometry);
+    }
+    const chunks = [];
+    for (const g of groups) {
+      const meshes = g.meshes || [g.mesh].filter(Boolean);
+      for (const m of meshes) {
+        if (!m.geometry) continue;
+        const mArea = meshArea(m.geometry);
+        const share = Math.max(100, Math.round((area * 0.004) * (mArea / Math.max(area,1e-9))));
+        chunks.push(sampleMesh(m.geometry, m.matrix || g.matrix || new THREE.Matrix4(), share));
+      }
+    }
+    const cloud = recenterChunks(chunks, c.x, c.y, c.z);
+    const cn = centroid(cloud);
+    const dir = [cn[0], cn[1], cn[2]];
+    const dlen = Math.hypot(dir[0],dir[1],dir[2])||1;
+    const dsc = (Math.max(bounds.getSize(new THREE.Vector3()).length(), 1)*0.3)/dlen;
+    const base = file.name.replace(/\.[^.]+$/, '');
+    const part = { name: base, desc: 'Imported CAD design', color: '#7fa3ff', anchor: [0,0,0], dir: [dir[0]*dsc, dir[1]*dsc, dir[2]*dsc] };
+    const packed = [{
+      name: part.name,
+      desc: part.desc,
+      color: part.color,
+      instances: [{ cloud: { p: cloud, n: cloud.length/3 }, dir: part.dir, anchor: [0,0,0] }]
+    }];
+    const modelDef = {
+      id: 'imported',
+      name: base,
+      category: 'Imported',
+      subtitle: 'User uploaded CAD',
+      view: { x: 0.25, y: -0.5, z: 0 },
+      build: () => packed,
+      parts: packed,
+      pack: { json: { origin: [c.x,c.y,c.z], radius: bounds.getSize(new THREE.Vector3()).length() } }
+    };
+    scene.models.push(modelDef);
+    const idx = scene.models.length - 1;
+    const chips = $('chips');
+    if (chips) {
+      const grp = document.createElement('div');
+      grp.className = 'grp';
+      const gl = document.createElement('span'); gl.className='gl'; gl.textContent='Imported'; grp.appendChild(gl);
+      const b = document.createElement('button'); b.textContent = modelDef.name; b.dataset.i = idx; b.onclick = () => scene.setModel(idx); grp.appendChild(b);
+      chips.appendChild(grp);
+    }
+    scene.setModel(idx);
+    toast('Imported successfully');
+  } catch (e) { console.error(e); toast('Import failed'); }
+};
+
+if (bAddPart) bAddPart.onclick = () => partInput.click();
+partInput.onchange = async () => {
+  const file = partInput.files?.[0];
+  partInput.value = '';
+  if (!file || !scene || scene.models.length === 0) return;
+  try {
+    toast('Adding part...');
+    const { part } = await addPartFromFile(file, scene.getPack(), { align: true });
+    if (scene.appendPart) scene.appendPart(part);
+    toast('Part added');
+  } catch (e) { console.error(e); toast('Add part failed'); }
+};
 
 function toggle(id, key, after) {
   const el = $(id);
