@@ -280,7 +280,7 @@ const tFull = $('t-full');
 if (tFull) tFull.onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
 
 const controlsToggle = $('controls-toggle');
-function setControlsHidden(hidden) {
+function setControlsHidden(hidden, opts = {}) {
   hidden = !!hidden;
   if (hidden === ui.controlsHidden) return;
   ui.controlsHidden = hidden;
@@ -291,10 +291,13 @@ function setControlsHidden(hidden) {
     controlsToggle.setAttribute('aria-expanded', String(!hidden));
   }
   if (scene && scene.setPanelVisible) scene.setPanelVisible(!hidden);
-  const msg = hidden ? 'Controls hidden — full view' : 'Controls shown';
-  toast(msg);
+  try { localStorage.setItem('holo.controls', hidden ? 'hidden' : 'shown'); } catch { /* private mode */ }
+  if (!opts.silent) toast(hidden ? 'Controls hidden — full view' : 'Controls shown');
 }
 if (controlsToggle) controlsToggle.onclick = () => setControlsHidden(!ui.controlsHidden);
+try {
+  if (localStorage.getItem('holo.controls') === 'hidden') setControlsHidden(true, { silent: true });
+} catch { /* private mode */ }
 
 const tracker = new HandTracker();
 const engine = new GestureEngine();
