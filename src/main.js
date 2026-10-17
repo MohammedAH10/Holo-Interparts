@@ -481,7 +481,7 @@ function control(t, dt) {
 let draggingMouse = false;
 let mouseStart = null;
 let mouseLast = null;
-const onUi = (e) => e.target.closest && e.target.closest('#panel,#chips,#toolbar,#start');
+const onUi = (e) => e.target.closest && e.target.closest('#panel,#chips,#toolbar,#start,#controls-toggle');
 addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || onUi(e)) return;
   draggingMouse = true;
