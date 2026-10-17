@@ -203,7 +203,8 @@ export class HoloScene {
       const anchors = [];
       const samples = [];
       (p.instances || []).forEach(inst => {
-        anchors.push({ a: [inst.anchor?.[0] || 0 - c[0], inst.anchor?.[1] || 0 - c[1], inst.anchor?.[2] || 0 - c[2]], d: inst.dir || [0,0,0] });
+        const a = inst.anchor || [0, 0, 0];
+        anchors.push({ a: [a[0] - c[0], a[1] - c[1], a[2] - c[2]], d: inst.dir || [0,0,0] });
         const q = inst.cloud?.p || inst.cloud;
         if (!q) return;
         const n = inst.cloud?.n || (q.length / 3);
