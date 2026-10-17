@@ -515,6 +515,7 @@ addEventListener('keydown', (e) => {
   } else if (e.key === 'ArrowRight') scene.next(1);
   else if (e.key === 'ArrowLeft') scene.next(-1);
   else if (e.key.toLowerCase() === 'r') scene.resetView();
+  else if (e.key.toLowerCase() === 'h') setControlsHidden(!ui.controlsHidden);
   else if (e.key >= '1' && e.key <= String(MODELS.length)) scene.setModel(+e.key - 1);
 });
 
