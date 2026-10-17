@@ -1,6 +1,6 @@
 import './styles.css';
 import { HoloScene } from './scene.js';
-import { MODELS } from './models/index.js';
+import { MODELS, DEMO_MODELS } from './models/index.js';
 import { HandTracker } from './handTracking.js';
 import { GestureEngine, HAND_CONNECTIONS } from './gestureEngine.js';
 import { clamp } from './utils.js';
@@ -73,6 +73,35 @@ if (chips && MODELS.length > 0) {
   }
 }
 
+const demoList = $('demo-list');
+function renderDemos() {
+  if (!demoList) return;
+  demoList.innerHTML = '';
+  if (!DEMO_MODELS.length) {
+    const em = document.createElement('p');
+    em.className = 'demo-empty';
+    em.textContent = 'No built-in demo designs bundled.';
+    demoList.appendChild(em);
+    return;
+  }
+  DEMO_MODELS.forEach((m) => {
+    const i = MODELS.indexOf(m);
+    const b = document.createElement('button');
+    b.className = 'demo-row';
+    b.dataset.i = i;
+    const nm = document.createElement('span');
+    nm.className = 'dr-name';
+    nm.textContent = m.name || `Model ${i}`;
+    const sb = document.createElement('span');
+    sb.className = 'dr-sub';
+    sb.textContent = m.subtitle || m.category || 'Demo';
+    b.append(nm, sb);
+    b.onclick = () => scene.setModel(i);
+    demoList.appendChild(b);
+  });
+}
+renderDemos();
+
 scene.onModel = (i, def, g) => {
   const mName = $('m-name');
   const mSub = $('m-sub');
@@ -84,6 +113,9 @@ scene.onModel = (i, def, g) => {
   if (mCount) mCount.textContent = `${g.meta.length} parts`;
   if (chips) {
     chips.querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.i === i));
+  }
+  if (demoList) {
+    demoList.querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.i === i));
   }
   showPart(-1);
   toast(def.name || 'Model');
