@@ -19,6 +19,16 @@ npm run dev
 Open the URL Vite prints (normally http://localhost:5173) and click **Start camera**. Camera only works on `http://localhost` or `https`.
 `npm install` copies the MediaPipe WASM and downloads the hand model into `public/`. If that download is blocked, the app fetches both from a CDN at runtime.
 
+## Demo designs
+
+Four designs are hardcoded and ship with the app, so you can try the whole exploded-view experience before
+importing anything: **Turbofan Jet Engine**, **Radial Aircraft Engine**, **Sports Car** and **Human Brain**.
+
+Click **Try demo designs** on the start screen (no camera needed — mouse controls are enabled) or use the
+**Try a demo design** list in the left panel. The bottom chip bar switches between them too. When you are ready for
+your own geometry, use **Import CAD** (`.stl`, `.obj`, `.ply`, `.gltf`, `.glb`, `.fbx`) or **Add part** to drop a
+single part into the current design.
+
 ## Models
 
 Turbofan Jet Engine (fan, guide vanes, compressors, combustor, turbines, shaft, nozzle) ·
@@ -42,6 +52,12 @@ Human Brain (4 lobes, cerebellum, brainstem, corpus callosum, thalamus, hippocam
 
 Drag = rotate · scroll = zoom · click a part = inspect it · `Space` = explode / assemble · `←` `→` or `1`–`4` = switch model · `R` = reset view.
 Sliders in the left panel control the explosion and its intensity. The top-right buttons toggle camera background, hand skeleton, labels and fullscreen.
+
+## Full view (retractable controls)
+
+The left panel and the top-right toolbar cover part of the model. Click the small tab on the left edge or press
+`H` to retract them; the model recenters, labels use the full width, and only a slim handle stays on screen.
+Click the tab again (or press `H`) to bring the controls back. The choice is remembered between visits.
 
 ## Tips
 
