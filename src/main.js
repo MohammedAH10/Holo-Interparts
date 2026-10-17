@@ -49,7 +49,7 @@ try {
   throw e;
 }
 
-const ui = { skeleton: true, labels: true, feed: false };
+const ui = { skeleton: true, labels: true, feed: false, controlsHidden: false };
 let trackingState = 'Off';
 
 const chips = $('chips');
@@ -278,6 +278,23 @@ toggle('t-skel', 'skeleton');
 toggle('t-labels', 'labels');
 const tFull = $('t-full');
 if (tFull) tFull.onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
+
+const controlsToggle = $('controls-toggle');
+function setControlsHidden(hidden) {
+  hidden = !!hidden;
+  if (hidden === ui.controlsHidden) return;
+  ui.controlsHidden = hidden;
+  document.body.classList.toggle('controls-hidden', hidden);
+  if (controlsToggle) {
+    controlsToggle.title = hidden ? 'Show controls' : 'Hide controls';
+    controlsToggle.setAttribute('aria-label', hidden ? 'Show controls' : 'Hide controls');
+    controlsToggle.setAttribute('aria-expanded', String(!hidden));
+  }
+  if (scene && scene.setPanelVisible) scene.setPanelVisible(!hidden);
+  const msg = hidden ? 'Controls hidden — full view' : 'Controls shown';
+  toast(msg);
+}
+if (controlsToggle) controlsToggle.onclick = () => setControlsHidden(!ui.controlsHidden);
 
 const tracker = new HandTracker();
 const engine = new GestureEngine();
