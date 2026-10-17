@@ -105,6 +105,7 @@ export class HoloScene {
     this.cache = new Map();
     this.onModel = null;
     this.currentPack = null;
+    this.panelVisible = true;
 
     this.resize();
     addEventListener('resize', () => this.resize());
@@ -130,9 +131,16 @@ export class HoloScene {
     this.camera.updateProjectionMatrix();
     this.uniforms.uPR.value = this.renderer.getPixelRatio();
     const unitsPerPx = (2 * Math.tan((FOV * Math.PI) / 360) * CAM_Z) / H;
-    const panel = W > 900 ? 300 : 0;
+    const panel = this.panelVisible !== false && W > 900 ? 300 : 0;
     this.shift = (panel / 2) * unitsPerPx;
     this.unitsPerPx = unitsPerPx;
+  }
+
+  setPanelVisible(visible) {
+    visible = visible !== false;
+    if (visible === this.panelVisible) return;
+    this.panelVisible = visible;
+    this.resize();
   }
 
   getPack() {
