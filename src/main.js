@@ -66,6 +66,7 @@ if (chips && MODELS.length > 0) {
       const b = document.createElement('button');
       b.textContent = m.name || `Model ${i}`;
       b.dataset.i = i;
+      if (m.demo) b.classList.add('demo');
       b.onclick = () => scene.setModel(i);
       grp.appendChild(b);
     });
@@ -109,7 +110,11 @@ scene.onModel = (i, def, g) => {
   const mCount = $('m-count');
   if (mName) mName.textContent = def.name || 'Model';
   if (mSub) mSub.textContent = def.subtitle || '';
-  if (mCat) mCat.textContent = def.category || 'General';
+  if (mCat) {
+    const cat = def.category || 'General';
+    mCat.textContent = def.demo ? `Demo · ${cat}` : cat;
+    mCat.classList.toggle('demo', !!def.demo);
+  }
   if (mCount) mCount.textContent = `${g.meta.length} parts`;
   if (chips) {
     chips.querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.i === i));
