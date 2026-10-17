@@ -4,10 +4,14 @@ import { flattenAssembly, prettyName } from '../import/assembly.js';
 import { sampleMesh, meshArea, groupBounds, centroid, recenterChunks } from '../import/sampler.ext.js';
 
 function deriveExplode(cn, radius = 1) {
-  const dir = [cn[0], cn[1], cn[2]];
-  const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+  let dir = [cn[0], cn[1], cn[2]];
+  let len = Math.hypot(dir[0], dir[1], dir[2]);
+  if (len < radius * 0.05) {
+    dir = [0, 1, 0];
+    len = 1;
+  }
   const scale = (radius * 0.4) / len;
-  return { dir: [dir[0]*scale, dir[1]*scale, dir[2]*scale] };
+  return { dir: [dir[0] * scale, dir[1] * scale, dir[2] * scale] };
 }
 
 function colorForName(name) {

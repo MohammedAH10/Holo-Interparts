@@ -147,28 +147,33 @@ export class HoloScene {
     return this.currentPack;
   }
 
-  appendPart(partData) {
-    if (!this.parts) this.parts = [];
-    if (partData) {
-      const rgb = hexRgb(partData.color || '#ffaa44');
-      this.parts.push({ name: partData.name || 'Part', desc: partData.desc || '', color: partData.color || '#ffaa44', anchors: [{ a: [0,0,0], d: [0,0,0] }], samples: new Float32Array([0,0,0,0,0,0]) });
-      if (this.onModel) {
-        const g = this._geometry(this.index);
-        if (this.points) {
-          this.points.geometry.dispose();
-          this.points.geometry = g.geo;
-        }
-        this.parts = g.meta;
-        this.fit = g.fit;
-        this.count = g.count;
-      }
+  appendPart(partData, cloud) {
+    if (!partData) return;
+    const def = this.models[this.index];
+    if (!def) return;
+    if ((this.parts?.length || 0) >= MAXP) return;
+    const instances = [];
+    if (cloud && (cloud.length || cloud.p?.length)) {
+      instances.push({ cloud, dir: partData.dir || [0, 0, 0], anchor: partData.anchor || [0, 0, 0] });
     }
+    if (!def.extraParts) def.extraParts = [];
+    def.extraParts.push({
+      name: partData.name || 'Part',
+      desc: partData.desc || '',
+      color: partData.color || '#ffaa44',
+      instances,
+    });
+    this.cache.delete(this.index);
+    this.releaseAll(true);
+    this.pending = this.index;
+    this.scatterTarget = 1;
   }
 
   _geometry(i) {
     if (this.cache.has(i)) return this.cache.get(i);
     const def = this.models[i];
-    const parts = def.build ? def.build() : (def.parts || []);
+    const parts = (def.build ? def.build() : (def.parts || [])).slice();
+    if (def.extraParts) parts.push(...def.extraParts);
     let total = 0;
     for (const p of parts) {
       for (const inst of p.instances || []) {

@@ -258,8 +258,8 @@ partInput.onchange = async () => {
   if (!file || !scene || scene.models.length === 0) return;
   try {
     toast('Adding part...');
-    const { part } = await addPartFromFile(file, scene.getPack(), { align: true });
-    if (scene.appendPart) scene.appendPart(part);
+    const { part, cloud } = await addPartFromFile(file, scene.getPack(), { align: true });
+    if (scene.appendPart) scene.appendPart(part, cloud);
     toast('Part added');
   } catch (e) { console.error(e); toast('Add part failed'); }
 };
