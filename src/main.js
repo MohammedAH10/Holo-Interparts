@@ -103,6 +103,18 @@ function renderDemos() {
 }
 renderDemos();
 
+const demoImport = $('demo-import');
+if (demoImport) {
+  demoImport.onclick = () => {
+    const imp = $('b-import');
+    if (!imp) return;
+    imp.classList.remove('pulse');
+    void imp.offsetWidth;
+    imp.classList.add('pulse');
+    imp.click();
+  };
+}
+
 scene.onModel = (i, def, g) => {
   const mName = $('m-name');
   const mSub = $('m-sub');
