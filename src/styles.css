@@ -118,6 +118,23 @@ input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border-radius
 .btns button:hover, #toolbar button:hover { background: rgba(255, 255, 255, 0.13); }
 .btns button.on { border-color: rgba(242, 201, 76, 0.55); color: var(--gold); }
 
+/* ------------------------------------------------ controls toggle handle */
+#controls-toggle {
+  position: fixed; left: calc(14px + 272px + 8px); top: 50%; transform: translateY(-50%);
+  width: 27px; height: 60px; z-index: 6;
+  display: grid; place-items: center; padding: 0;
+  color: #c8ccdc;
+  background: var(--glass); border: 1px solid var(--line); border-radius: 10px;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+  transition: left 0.32s ease, background 0.15s, color 0.15s;
+}
+#controls-toggle:hover { background: rgba(255, 255, 255, 0.13); color: #fff; }
+#controls-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.32s ease; }
+body.controls-hidden #controls-toggle { left: 14px; }
+body.controls-hidden #controls-toggle svg { transform: rotate(180deg); }
+@media (max-width: 900px) { #controls-toggle { left: calc(14px + 232px + 8px); } body.controls-hidden #controls-toggle { left: 14px; } }
+
 /* ------------------------------------------------ toolbar + chips */
 #toolbar { position: fixed; right: 14px; top: 14px; display: flex; gap: 6px; transition: transform 0.32s ease, opacity 0.32s ease; }
 body.controls-hidden #toolbar { transform: translateX(120%); opacity: 0; pointer-events: none; }
