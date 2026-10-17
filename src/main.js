@@ -618,7 +618,7 @@ function drawLabels() {
   if (e <= 0.01 || scene.uniforms.uScatter.value > 0.3) return;
   const pts = scene.labelPoints();
   const c = scene.centerScreen();
-  const panelR = W > 900 ? 310 : 0;
+  const panelR = W > 900 && !ui.controlsHidden ? 310 : 0;
   const left = [], right = [];
   for (const p of pts) (p.x < c.x ? left : right).push(p);
   const maxX = Math.max(...pts.map((p) => p.x), c.x);
