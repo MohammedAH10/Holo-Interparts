@@ -121,6 +121,8 @@ input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border-radius
 #start p { color: #b6bbd0; margin: 8px 0 18px; line-height: 1.45; font-size: 13px; }
 #start button { display: block; width: 100%; border-radius: 12px; padding: 11px; font-size: 13.5px; margin-top: 8px; }
 #start .primary { background: var(--gold); color: #1b1704; border: 0; font-weight: 650; }
+#start .demo { background: rgba(242, 201, 76, 0.12); border: 1px solid rgba(242, 201, 76, 0.5); color: var(--gold); }
+#start .demo:hover { background: rgba(242, 201, 76, 0.2); }
 #start .ghost { background: transparent; border: 1px solid var(--line); }
 #start small { display: block; margin-top: 14px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
 

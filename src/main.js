@@ -283,11 +283,19 @@ function setTracking(text, cls) {
 
 const btnCam = $('btn-cam');
 const btnMouse = $('btn-mouse');
+const btnDemo = $('btn-demo');
 if (btnCam) btnCam.onclick = startCamera;
 if (btnMouse) btnMouse.onclick = () => {
   const start = $('start');
   if (start) start.classList.add('gone');
   enterMouseMode('');
+};
+if (btnDemo) btnDemo.onclick = () => {
+  const start = $('start');
+  if (start) start.classList.add('gone');
+  enterMouseMode('');
+  if (scene && MODELS.length) scene.setModel(0);
+  toast('Demo designs ready — switch with the chips below');
 };
 
 function mapPoint(p) {
