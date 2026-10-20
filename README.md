@@ -36,9 +36,17 @@ Radial Aircraft Engine (crankcase, 9 cylinders, pistons, rods, crankshaft, exhau
 Sports Car (body panels, chassis, engine, drivetrain, seats, wheels, brakes) ·
 Human Brain (4 lobes, cerebellum, brainstem, corpus callosum, thalamus, hippocampus, amygdala, hypothalamus)
 
+## Hand control or mouse control
+
+You are never locked into one input. Use **Start camera** for hand gestures or **Use mouse instead** / **Try demo designs**
+for mouse control, and switch whenever you like with the **Switch to hand gestures / Switch to mouse control** button in
+the left panel. Switching to mouse stops the webcam track (the camera light turns off); switching back asks for the camera
+again. Mouse drag/zoom/click keep working while hand gestures are on.
+
 ## Gestures
 
 | Gesture | Effect |
+|---|---|
 |---|---|
 | Open hand slowly | Explode the model. The white arc on the gold ring shows how far. |
 | Close your hand / fist | Pull it back together |
