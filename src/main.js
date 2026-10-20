@@ -304,6 +304,7 @@ const engine = new GestureEngine();
 let camOn = false;
 let lastVideoTime = -1;
 let perc = { hands: [] };
+let inputMode = 'mouse';
 
 async function startCamera() {
   const start = $('start');
@@ -311,7 +312,7 @@ async function startCamera() {
   setTracking('Starting…', 'warn');
   if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
     enterMouseMode('Camera needs http://localhost or https.');
-    return;
+    return false;
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, audio: false });
@@ -325,17 +326,66 @@ async function startCamera() {
   } catch (e) {
     console.warn(e);
     enterMouseMode(e && e.name === 'NotAllowedError' ? 'Camera permission denied. Allow it in the address bar and reload.' : 'No camera found.');
-    return;
+    return false;
   }
   setTracking('Loading hand model…', 'warn');
   try {
-    await tracker.init();
+    if (!tracker.ready) await tracker.init();
     setTracking('Hands on', 'ok');
     showBanner('');
+    return true;
   } catch (e) {
     console.error(e);
-    setTracking('Mouse only', 'warn');
     showBanner('Hand model failed to load (needs internet once). Mouse controls still work.');
+    return false;
+  }
+}
+
+function stopCamera() {
+  camOn = false;
+  const stream = video.srcObject;
+  if (stream && stream.getTracks) stream.getTracks().forEach((tr) => tr.stop());
+  video.srcObject = null;
+  lastVideoTime = -1;
+  perc = { hands: [] };
+  ui.feed = false;
+  document.body.classList.remove('feed');
+  const tFeed = $('t-feed');
+  if (tFeed) tFeed.classList.remove('on');
+  endGrab();
+  if (scene) scene.setHover(-1);
+}
+
+function updateModeButton() {
+  const b = $('b-mode');
+  if (!b) return;
+  const hand = inputMode === 'hand';
+  b.textContent = hand ? 'Switch to mouse control' : 'Switch to hand gestures';
+  b.title = hand ? 'Turn the webcam off and use the mouse' : 'Turn the webcam on and control with your hands';
+  b.classList.toggle('on', hand);
+}
+
+async function setInputMode(mode) {
+  mode = mode === 'hand' ? 'hand' : 'mouse';
+  if (mode === inputMode && (mode === 'mouse' || camOn)) {
+    updateModeButton();
+    return;
+  }
+  inputMode = mode;
+  updateModeButton();
+  if (mode === 'hand') {
+    toast('Hand gestures on — show your hands');
+    const ok = await startCamera();
+    if (!ok) {
+      inputMode = 'mouse';
+      updateModeButton();
+      stopCamera();
+      setTracking('Mouse only', 'warn');
+    }
+  } else {
+    stopCamera();
+    setTracking('Mouse only', 'warn');
+    toast('Mouse control on');
   }
 }
 
@@ -353,19 +403,25 @@ function setTracking(text, cls) {
 const btnCam = $('btn-cam');
 const btnMouse = $('btn-mouse');
 const btnDemo = $('btn-demo');
-if (btnCam) btnCam.onclick = startCamera;
+if (btnCam) btnCam.onclick = () => setInputMode('hand');
 if (btnMouse) btnMouse.onclick = () => {
   const start = $('start');
   if (start) start.classList.add('gone');
+  setInputMode('mouse');
   enterMouseMode('');
 };
 if (btnDemo) btnDemo.onclick = () => {
   const start = $('start');
   if (start) start.classList.add('gone');
+  setInputMode('mouse');
   enterMouseMode('');
   if (scene && MODELS.length) scene.setModel(0);
   toast('Demo designs ready — switch with the chips below');
 };
+
+const bMode = $('b-mode');
+if (bMode) bMode.onclick = () => setInputMode(inputMode === 'hand' ? 'mouse' : 'hand');
+updateModeButton();
 
 function mapPoint(p) {
   const vw = video.videoWidth || 1280, vh = video.videoHeight || 720;
@@ -394,7 +450,7 @@ function endGrab() {
 }
 
 function control(t, dt) {
-  const live = perc.hands.filter((h) => !h.held);
+  const live = inputMode === 'hand' ? perc.hands.filter((h) => !h.held) : [];
   const sHands = $('s-hands');
   if (sHands) sHands.textContent = String(live.length);
 
@@ -681,7 +737,8 @@ function frame(now) {
   const t = now / 1000;
   const dt = Math.min(0.05, Math.max(0.001, t - lastT));
   lastT = t;
-  if (camOn && tracker.ready && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+  if (inputMode !== 'hand' && perc.hands.length) perc = { hands: [] };
+  if (inputMode === 'hand' && camOn && tracker.ready && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     const hands = tracker.detect(video, now);
     perc = engine.update(hands, t, mapPoint, (video.videoWidth || 16) / (video.videoHeight || 9));
