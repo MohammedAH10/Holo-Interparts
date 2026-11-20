@@ -471,6 +471,39 @@ cadInput.onchange = async () => {
   }
 };
 
+let dragDepth = 0;
+function hasDroppedFiles(event) {
+  return !!event.dataTransfer && [...(event.dataTransfer.types || [])].includes('Files');
+}
+addEventListener('dragenter', (event) => {
+  if (!hasDroppedFiles(event)) return;
+  event.preventDefault();
+  dragDepth++;
+  document.body.classList.add('dragging');
+});
+addEventListener('dragover', (event) => {
+  if (hasDroppedFiles(event)) event.preventDefault();
+});
+addEventListener('dragleave', (event) => {
+  if (!hasDroppedFiles(event)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) document.body.classList.remove('dragging');
+});
+addEventListener('drop', async (event) => {
+  if (!hasDroppedFiles(event)) return;
+  event.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove('dragging');
+  const file = event.dataTransfer.files?.[0];
+  if (!file || !scene) return;
+  try {
+    await importCadFile(file);
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Import failed');
+  }
+});
+
 if (bAddPart) bAddPart.onclick = () => partInput.click();
 partInput.onchange = async () => {
   const file = partInput.files?.[0];
