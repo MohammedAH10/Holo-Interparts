@@ -80,6 +80,12 @@ export function buildImportedModel(root, options = {}) {
     backendId: options.backendId || null,
     surface: surfaceGeometry ? { geometry: surfaceGeometry, color: options.surfaceColor || HOLO_COLOR } : null,
   };
+  modelDef.importStats = {
+    points: cloud.length / 3,
+    triangles: options.triangleCount || countTriangles(groups),
+    vertices: options.vertexCount || 0,
+    radius: options.radius || size.length(),
+  };
 
   return {
     modelDef,

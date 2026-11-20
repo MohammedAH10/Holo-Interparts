@@ -288,8 +288,18 @@ scene.onModel = (i, def, g) => {
   const mSub = $('m-sub');
   const mCat = $('m-cat');
   const mCount = $('m-count');
+  const mStats = $('m-stats');
   if (mName) mName.textContent = def.name || 'Model';
   if (mSub) mSub.textContent = def.subtitle || '';
+  if (mStats) {
+    if (def.importStats) {
+      mStats.style.display = '';
+      mStats.textContent = `${formatCount(def.importStats.triangles)} tris`;
+    } else {
+      mStats.style.display = 'none';
+      mStats.textContent = '';
+    }
+  }
   if (mCat) {
     const cat = def.category || 'General';
     mCat.textContent = def.demo ? `Demo · ${cat}` : cat;
