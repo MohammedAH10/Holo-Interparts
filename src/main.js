@@ -6,9 +6,16 @@ import { GestureEngine, HAND_CONNECTIONS } from './gestureEngine.js';
 import { clamp } from './utils.js';
 import { addPartFromFile } from './editing/addPart.js';
 import { loadModelFile } from './import/loaders.js';
-import { flattenAssembly } from './import/assembly.js';
-import { sampleMesh, meshArea, groupBounds, centroid, recenterChunks } from './import/sampler.ext.js';
-import * as THREE from 'three';
+import { buildImportedModel } from './import/modelFactory.js';
+import {
+  ApiError,
+  BackendUnavailableError,
+  backendHealth,
+  deleteModel,
+  listModels,
+  loadGlbFromBackend,
+  uploadStl,
+} from './api/models.js';
 
 const $ = (id) => document.getElementById(id);
 const video = $('video');
@@ -40,23 +47,28 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 1600);
 }
 
+const ui = { skeleton: true, labels: true, feed: false, controlsHidden: false };
+let trackingState = 'Off';
+let holoOn = true;
+try { holoOn = localStorage.getItem('holo.surface') !== 'off'; } catch { /* private mode */ }
 let scene;
+const backendState = { online: false, checked: false, info: null, models: [], loaded: new Map() };
+
 try {
   scene = new HoloScene($('scene'), MODELS);
+  scene.setHologramEnabled(holoOn);
 } catch (e) {
   console.error(e);
   showBanner('WebGL is not available. Use a current Chrome, Edge or Firefox with hardware acceleration on.');
   throw e;
 }
 
-const ui = { skeleton: true, labels: true, feed: false, controlsHidden: false };
-let trackingState = 'Off';
-
 const chips = $('chips');
 if (chips && MODELS.length > 0) {
   for (const cat of [...new Set(MODELS.map((m) => m.category || 'General'))]) {
     const grp = document.createElement('div');
     grp.className = 'grp';
+    grp.dataset.cat = cat;
     const gl = document.createElement('span');
     gl.className = 'gl';
     gl.textContent = cat;
@@ -103,6 +115,162 @@ function renderDemos() {
 }
 renderDemos();
 
+const savedList = $('saved-list');
+const savedCount = $('saved-count');
+
+function setBackendState(kind, text) {
+  const dot = $('backend-dot');
+  const label = $('backend-state');
+  if (dot) dot.className = `dot ${kind}`;
+  if (label) label.textContent = text;
+}
+
+function updateSavedCount() {
+  if (savedCount) savedCount.textContent = String(backendState.models.length);
+}
+
+function appendChip(modelDef, idx) {
+  if (!chips) return;
+  let group = [...chips.querySelectorAll('.grp')].find((g) => g.dataset.cat === 'Imported');
+  if (!group) {
+    group = document.createElement('div');
+    group.className = 'grp';
+    group.dataset.cat = 'Imported';
+    const label = document.createElement('span');
+    label.className = 'gl';
+    label.textContent = 'Imported';
+    group.appendChild(label);
+    chips.appendChild(group);
+  }
+  const button = document.createElement('button');
+  button.textContent = modelDef.name || 'Imported';
+  button.dataset.i = idx;
+  button.onclick = () => scene.setModel(idx);
+  group.appendChild(button);
+}
+
+function registerModel(modelDef) {
+  MODELS.push(modelDef);
+  const idx = MODELS.length - 1;
+  appendChip(modelDef, idx);
+  return idx;
+}
+
+function markSavedActive() {
+  if (!savedList) return;
+  const def = MODELS[scene.index];
+  savedList.querySelectorAll('.saved-load').forEach((button) => {
+    button.classList.toggle('active', !!def?.backendId && button.dataset.backendId === def.backendId);
+  });
+}
+
+function renderSavedModels() {
+  if (!savedList) return;
+  savedList.innerHTML = '';
+  updateSavedCount();
+
+  if (!backendState.online) {
+    const message = document.createElement('p');
+    message.className = 'demo-empty';
+    message.textContent = 'Backend offline — visual imports still work in the browser.';
+    savedList.appendChild(message);
+    return;
+  }
+
+  if (backendState.models.length === 0) {
+    const message = document.createElement('p');
+    message.className = 'demo-empty';
+    message.textContent = 'Upload an STL to build your hologram library.';
+    savedList.appendChild(message);
+    return;
+  }
+
+  for (const record of backendState.models) {
+    const row = document.createElement('div');
+    row.className = 'saved-row';
+
+    const load = document.createElement('button');
+    load.className = 'saved-load';
+    load.dataset.backendId = record.id;
+    const name = document.createElement('span');
+    name.className = 'dr-name';
+    name.textContent = record.name || record.originalName || 'Imported model';
+    const sub = document.createElement('span');
+    sub.className = 'dr-sub';
+    sub.textContent = `${formatCount(record.triangleCount)} tris · ${formatBytes(record.glbBytes)}`;
+    load.append(name, sub);
+    load.onclick = () => loadSavedModel(record).catch((error) => {
+      console.error(error);
+      toast(error instanceof ApiError ? error.message : 'Could not load saved model');
+    });
+
+    const remove = document.createElement('button');
+    remove.className = 'saved-del';
+    remove.title = 'Delete from library';
+    remove.setAttribute('aria-label', `Delete ${name.textContent}`);
+    remove.textContent = '×';
+    remove.onclick = () => removeSavedModel(record);
+
+    row.append(load, remove);
+    savedList.appendChild(row);
+  }
+  markSavedActive();
+}
+
+async function loadSavedModel(record) {
+  const existing = backendState.loaded.get(record.id);
+  if (existing !== undefined && MODELS[existing]) {
+    scene.setModel(existing);
+    return;
+  }
+  toast(`Loading ${record.name}…`);
+  const root = await loadGlbFromBackend(record.id);
+  const built = buildImportedModel(root, {
+    fileName: `${record.name || 'model'}.stl`,
+    name: record.name,
+    backendId: record.id,
+    center: [0, 0, 0],
+    origin: record.originalCenter || [0, 0, 0],
+    radius: record.radius,
+    triangleCount: record.triangleCount,
+    vertexCount: record.vertexCount,
+    subtitle: `${formatCount(record.triangleCount)} triangles · backend GLB`,
+  });
+  const idx = registerModel(built.modelDef);
+  backendState.loaded.set(record.id, idx);
+  scene.setModel(idx);
+  toast(`${record.name} ready`);
+}
+
+async function removeSavedModel(record) {
+  if (!confirm(`Delete "${record.name}" from the saved library?`)) return;
+  try {
+    await deleteModel(record.id);
+    backendState.models = backendState.models.filter((model) => model.id !== record.id);
+    renderSavedModels();
+    toast('Deleted from library');
+  } catch (error) {
+    console.error(error);
+    toast(error instanceof ApiError ? error.message : 'Delete failed');
+  }
+}
+
+async function refreshSavedModels() {
+  try {
+    backendState.info = await backendHealth();
+    backendState.online = true;
+    backendState.checked = true;
+    setBackendState('ok', `Backend ready · ${formatCount(backendState.info.maxTriangles)} tri cap`);
+    backendState.models = await listModels();
+    renderSavedModels();
+  } catch (error) {
+    backendState.online = false;
+    backendState.checked = true;
+    setBackendState('off', 'Backend offline · local import only');
+    renderSavedModels();
+  }
+}
+
 const demoImport = $('demo-import');
 if (demoImport) {
   demoImport.onclick = () => {
@@ -135,6 +303,12 @@ scene.onModel = (i, def, g) => {
     demoList.querySelectorAll('button').forEach((b) => b.classList.toggle('active', +b.dataset.i === i));
   }
   showPart(-1);
+  markSavedActive();
+  const holoButton = $('t-holo');
+  if (holoButton) {
+    holoButton.disabled = !def.surface;
+    holoButton.classList.toggle('on', holoOn && !!def.surface);
+  }
   toast(def.name || 'Model');
 };
 
@@ -186,69 +360,105 @@ const bAddPart = $('b-add');
 const cadInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx' });
 const partInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx' });
 
+function formatCount(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function importStlWithBackend(file) {
+  let lastPercent = -1;
+  const record = await uploadStl(file, {
+    onProgress(progress) {
+      const percent = Math.floor(progress * 100);
+      if (percent >= lastPercent + 10 || percent === 100) {
+        lastPercent = percent;
+        toast(`Uploading ${percent}%`);
+      }
+    },
+  });
+
+  toast('Mesh processed — building the hologram');
+  const root = await loadGlbFromBackend(record.id);
+  const built = buildImportedModel(root, {
+    fileName: file.name,
+    name: record.name,
+    backendId: record.id,
+    center: [0, 0, 0],
+    origin: record.originalCenter || [0, 0, 0],
+    radius: record.radius,
+    triangleCount: record.triangleCount,
+    vertexCount: record.vertexCount,
+    subtitle: `${formatCount(record.triangleCount)} triangles · backend GLB`,
+  });
+
+  const idx = registerModel(built.modelDef);
+  backendState.online = true;
+  backendState.checked = true;
+  backendState.models = [record, ...backendState.models.filter((model) => model.id !== record.id)];
+  backendState.loaded.set(record.id, idx);
+  renderSavedModels();
+  scene.setModel(idx);
+  toast(`${record.name} hologram ready`);
+  return idx;
+}
+
+async function importLocalCad(file) {
+  toast(`Importing ${file.name}…`);
+  const root = await loadModelFile(file);
+  const built = buildImportedModel(root, {
+    fileName: file.name,
+    subtitle: 'Browser import · hologram surface',
+  });
+  const idx = registerModel(built.modelDef);
+  scene.setModel(idx);
+  toast(`${formatCount(built.stats.points)} hologram points ready`);
+  return idx;
+}
+
+async function importCadFile(file) {
+  const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+  if (ext !== '.stl') return importLocalCad(file);
+
+  if (backendState.online || !backendState.checked) {
+    try {
+      return await importStlWithBackend(file);
+    } catch (error) {
+      if (error instanceof BackendUnavailableError) {
+        backendState.online = false;
+        backendState.checked = true;
+        setBackendState('off', 'Backend offline · local import only');
+        renderSavedModels();
+        toast('Backend offline — importing locally');
+      } else if (error instanceof ApiError) {
+        console.error(error);
+        toast(`Import failed: ${error.message}`);
+        return null;
+      } else {
+        console.error(error);
+        toast('Backend import failed — trying locally');
+      }
+    }
+  }
+  return importLocalCad(file);
+}
+
 if (bImport) bImport.onclick = () => cadInput.click();
 cadInput.onchange = async () => {
   const file = cadInput.files?.[0];
   cadInput.value = '';
   if (!file || !scene) return;
   try {
-    toast(`Importing ${file.name}...`);
-    const root = await loadModelFile(file);
-    const groups = flattenAssembly(root);
-    if (!groups.length) throw new Error('No geometry found');
-    const bounds = groupBounds(groups);
-    const c = bounds.getCenter(new THREE.Vector3());
-    let area = 0;
-    for (const g of groups) {
-      const meshes = g.meshes || [g.mesh].filter(Boolean);
-      for (const m of meshes) if (m.geometry) area += meshArea(m.geometry);
-    }
-    const chunks = [];
-    for (const g of groups) {
-      const meshes = g.meshes || [g.mesh].filter(Boolean);
-      for (const m of meshes) {
-        if (!m.geometry) continue;
-        const mArea = meshArea(m.geometry);
-        const share = Math.max(100, Math.round((area * 0.004) * (mArea / Math.max(area,1e-9))));
-        chunks.push(sampleMesh(m.geometry, m.matrix || g.matrix || new THREE.Matrix4(), share));
-      }
-    }
-    const cloud = recenterChunks(chunks, c.x, c.y, c.z);
-    const cn = centroid(cloud);
-    const dir = [cn[0], cn[1], cn[2]];
-    const dlen = Math.hypot(dir[0],dir[1],dir[2])||1;
-    const dsc = (Math.max(bounds.getSize(new THREE.Vector3()).length(), 1)*0.3)/dlen;
-    const base = file.name.replace(/\.[^.]+$/, '');
-    const part = { name: base, desc: 'Imported CAD design', color: '#7fa3ff', anchor: [0,0,0], dir: [dir[0]*dsc, dir[1]*dsc, dir[2]*dsc] };
-    const packed = [{
-      name: part.name,
-      desc: part.desc,
-      color: part.color,
-      instances: [{ cloud: { p: cloud, n: cloud.length/3 }, dir: part.dir, anchor: [0,0,0] }]
-    }];
-    const modelDef = {
-      id: 'imported',
-      name: base,
-      category: 'Imported',
-      subtitle: 'User uploaded CAD',
-      view: { x: 0.25, y: -0.5, z: 0 },
-      build: () => packed,
-      parts: packed,
-      pack: { json: { origin: [c.x,c.y,c.z], radius: bounds.getSize(new THREE.Vector3()).length() } }
-    };
-    scene.models.push(modelDef);
-    const idx = scene.models.length - 1;
-    const chips = $('chips');
-    if (chips) {
-      const grp = document.createElement('div');
-      grp.className = 'grp';
-      const gl = document.createElement('span'); gl.className='gl'; gl.textContent='Imported'; grp.appendChild(gl);
-      const b = document.createElement('button'); b.textContent = modelDef.name; b.dataset.i = idx; b.onclick = () => scene.setModel(idx); grp.appendChild(b);
-      chips.appendChild(grp);
-    }
-    scene.setModel(idx);
-    toast('Imported successfully');
-  } catch (e) { console.error(e); toast('Import failed'); }
+    await importCadFile(file);
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Import failed');
+  }
 };
 
 if (bAddPart) bAddPart.onclick = () => partInput.click();
@@ -276,6 +486,17 @@ function toggle(id, key, after) {
 toggle('t-feed', 'feed', () => document.body.classList.toggle('feed', ui.feed && camOn));
 toggle('t-skel', 'skeleton');
 toggle('t-labels', 'labels');
+const tHolo = $('t-holo');
+if (tHolo) {
+  tHolo.classList.toggle('on', holoOn);
+  tHolo.onclick = () => {
+    holoOn = !holoOn;
+    scene.setHologramEnabled(holoOn);
+    tHolo.classList.toggle('on', holoOn && !!scene.hasSurface);
+    try { localStorage.setItem('holo.surface', holoOn ? 'on' : 'off'); } catch { /* private mode */ }
+    toast(holoOn ? 'Hologram surface on' : 'Hologram surface off');
+  };
+}
 const tFull = $('t-full');
 if (tFull) tFull.onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.());
 
@@ -755,4 +976,5 @@ function frame(now) {
   drawOverlay();
   requestAnimationFrame(frame);
 }
+refreshSavedModels();
 requestAnimationFrame(frame);
