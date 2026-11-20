@@ -104,6 +104,30 @@ input[type="range"]::-moz-range-thumb { width: 11px; height: 11px; border-radius
 }
 .demo-empty { color: var(--muted); font-size: 11.5px; }
 
+.saved h4 { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.saved .count { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 10px; }
+.backend-line { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10.5px; margin-bottom: 7px; }
+.backend-line .dot { width: 7px; height: 7px; border-radius: 50%; background: #555a70; flex: none; }
+.backend-line .dot.ok { background: #6ff0a8; box-shadow: 0 0 7px rgba(111, 240, 168, 0.75); }
+.backend-line .dot.warn { background: var(--gold); }
+.backend-line .dot.off { background: #ff6b7d; }
+#saved-list { display: flex; flex-direction: column; gap: 5px; }
+.saved-row { display: flex; align-items: stretch; gap: 4px; }
+.saved-row .saved-load {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left;
+  padding: 7px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent; transition: background 0.15s, border-color 0.15s;
+}
+.saved-row .saved-load:hover { background: rgba(255, 255, 255, 0.11); }
+.saved-row .saved-load.active { border-color: rgba(79, 227, 224, 0.6); background: rgba(79, 227, 224, 0.12); }
+.saved-row .saved-load.active .dr-name { color: #4fe3e0; }
+.saved-row .saved-del {
+  width: 28px; padding: 0; border-radius: 9px; font-size: 15px; line-height: 1;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid transparent; color: var(--muted);
+}
+.saved-row .saved-del:hover { color: #ff8b9b; border-color: rgba(255, 107, 125, 0.45); background: rgba(255, 107, 125, 0.08); }
+.saved-row .saved-load .dr-sub { color: var(--muted); font-size: 10.5px; }
+
 .partcard { background: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 10px 12px; min-height: 74px; }
 .pc-name { display: flex; align-items: center; gap: 8px; }
 .pc-name i { width: 9px; height: 9px; border-radius: 50%; background: #555a70; flex: none; }
