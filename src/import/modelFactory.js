@@ -16,6 +16,9 @@ export function buildImportedModel(root, options = {}) {
   const center = options.center
     ? new THREE.Vector3(options.center[0], options.center[1], options.center[2])
     : bounds.getCenter(new THREE.Vector3());
+  const origin = options.origin
+    ? [options.origin[0], options.origin[1], options.origin[2]]
+    : [center.x, center.y, center.z];
   const size = bounds.getSize(new THREE.Vector3());
 
   let area = 0;
@@ -69,7 +72,7 @@ export function buildImportedModel(root, options = {}) {
     parts: packed,
     pack: {
       json: {
-        origin: [center.x, center.y, center.z],
+        origin,
         radius: options.radius || size.length(),
         backendId: options.backendId || null,
       },
@@ -87,7 +90,7 @@ export function buildImportedModel(root, options = {}) {
       triangles: options.triangleCount || countTriangles(groups),
       vertices: options.vertexCount || 0,
       area,
-      center: [center.x, center.y, center.z],
+      center: origin,
       radius: options.radius || size.length(),
       size: [size.x, size.y, size.z],
     },
