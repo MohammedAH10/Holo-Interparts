@@ -74,7 +74,8 @@ Click **Try demo designs** on the start screen (no camera needed — mouse contr
 your own geometry, use **Import CAD** (`.stl`, `.obj`, `.ply`, `.gltf`, `.glb`, `.fbx`) or **Add part** to drop a
 single part into the current design.
 
-STL uploads go through the backend and appear in the **Saved models** list. Imported CAD gets
+STL uploads go through the backend and appear in the **Saved models** list. You can click
+**Import CAD** or drag a file straight onto the workspace. Imported CAD gets
 a translucent WebGL hologram surface with a Fresnel rim, scanlines and glowing edges. The
 surface fades into the point cloud as you explode the model; toggle it with the cube button
 in the top-right toolbar. Use the small **×** in a saved row to delete it from the library.
