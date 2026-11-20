@@ -27,6 +27,12 @@ For STL uploads, saved models and backend processing, run the Node server in a s
 npm run server
 ```
 
+Or start both Vite and the backend together:
+
+```bash
+npm run dev:all
+```
+
 Vite proxies `/api` to `http://localhost:8787`. For a single production process:
 
 ```bash
