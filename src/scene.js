@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp, damp } from './utils.js';
+import { HologramLayer } from './scene/hologram.js';
 
 const MAXP = 24; // max parts per model (must match the shader array size)
 const CAM_Z = 9.5;
@@ -64,6 +65,7 @@ export class HoloScene {
     this.scene = new THREE.Scene();
     this.group = new THREE.Group();
     this.scene.add(this.group);
+    this.hologram = new HologramLayer(this.group);
 
     this.uniforms = {
       uExplode: { value: 0 },
@@ -259,6 +261,7 @@ export class HoloScene {
     this.points = new THREE.Points(g.geo, this.material);
     this.points.frustumCulled = false;
     this.group.add(this.points);
+    this.hologram.setSurface(this.models[i]?.surface || null);
     this.parts = g.meta;
     this.fit = g.fit;
     this.count = g.count;
@@ -287,6 +290,12 @@ export class HoloScene {
   }
   next(d = 1) { this.setModel((this.pending >= 0 ? this.pending : this.index) + d); }
 
+  setHologramEnabled(enabled) {
+    this.hologram.setEnabled(enabled);
+  }
+  get hasSurface() {
+    return !!this.hologram.mesh;
+  }
   setHover(i) { this.hover = i; this.uniforms.uHi.value = i; }
   setSel(i) { this.sel = i; this.uniforms.uSel.value = i; }
   rotateBy(dyaw, dpitch, dt = 1/60) {
@@ -387,6 +396,7 @@ export class HoloScene {
     }
     this.uniforms.uExplode.value = this.explode * this.intensity;
     this.uniforms.uTime.value = t;
+    this.hologram.update({ time: t, explode: this.explode, intensity: this.intensity });
     this.group.rotation.set(this.rot.x, this.rot.y, this.rot.z, 'YXZ');
     this.group.scale.setScalar(this.fit * this.scale);
     this.group.position.x = this.shift;
