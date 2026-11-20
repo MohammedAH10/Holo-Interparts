@@ -4,7 +4,9 @@
 Control exploded 3D models with your bare hands. Your webcam is the background, a hand skeleton and a gold ring follow your hand,
 and each model is a glowing point cloud that pulls apart into labelled parts so you can see what is inside.
 
-Everything runs in the browser: MediaPipe Hand Landmarker + Three.js. No backend, no API keys, nothing is uploaded.
+Hand tracking and rendering run in the browser with MediaPipe Hand Landmarker + Three.js/WebGL.
+An optional local Node backend processes STL uploads, validates and simplifies the mesh, and
+serves it back as a compact GLB that the browser draws as a glowing hologram surface.
 
 ## Run
 
@@ -19,6 +21,43 @@ npm run dev
 Open the URL Vite prints (normally http://localhost:5173) and click **Start camera**. Camera only works on `http://localhost` or `https`.
 `npm install` copies the MediaPipe WASM and downloads the hand model into `public/`. If that download is blocked, the app fetches both from a CDN at runtime.
 
+For STL uploads, saved models and backend processing, run the Node server in a second terminal:
+
+```bash
+npm run server
+```
+
+Vite proxies `/api` to `http://localhost:8787`. For a single production process:
+
+```bash
+npm run build
+npm start
+```
+
+Then open http://localhost:8787. Runtime models are stored in `server/data/` and are ignored by git.
+
+## STL backend
+
+The backend is dependency-free Node.js and only accepts `.stl` files:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Health check and processing limits |
+| `GET /api/models` | List saved models |
+| `POST /api/models` | Multipart upload in the `file` field |
+| `GET /api/models/:id` | Model metadata |
+| `GET /api/models/:id/model.glb` | Processed GLB served to WebGL |
+| `GET /api/models/:id/source.stl` | Original STL |
+| `DELETE /api/models/:id` | Remove a saved model |
+
+On upload the server detects binary or ASCII STL, rejects invalid/non-finite geometry, welds
+vertices, removes degenerate and duplicate triangles, rebuilds normals, simplifies dense
+meshes, computes bounds/centre and writes a self-contained GLB. Defaults: 60 MB upload and
+250,000 triangles; override with `HOLO_MAX_UPLOAD` and `HOLO_MAX_TRIANGLES`.
+
+If the backend is offline, STL files still import locally in the browser, just without
+server-side validation, simplification or the saved library.
+
 ## Demo designs
 
 Four designs are hardcoded and ship with the app, so you can try the whole exploded-view experience before
@@ -28,6 +67,11 @@ Click **Try demo designs** on the start screen (no camera needed — mouse contr
 **Try a demo design** list in the left panel. The bottom chip bar switches between them too. When you are ready for
 your own geometry, use **Import CAD** (`.stl`, `.obj`, `.ply`, `.gltf`, `.glb`, `.fbx`) or **Add part** to drop a
 single part into the current design.
+
+STL uploads go through the backend and appear in the **Saved models** list. Imported CAD gets
+a translucent WebGL hologram surface with a Fresnel rim, scanlines and glowing edges. The
+surface fades into the point cloud as you explode the model; toggle it with the cube button
+in the top-right toolbar. Use the small **×** in a saved row to delete it from the library.
 
 ## Models
 
@@ -75,11 +119,21 @@ Click the tab again (or press `H`) to bring the controls back. The choice is rem
 ## Files
 
 ```
-src/main.js          app loop, hand overlay, gesture -> action, labels, UI
-src/handTracking.js  MediaPipe wrapper (2 hands, local files then CDN, GPU then CPU)
-src/gestureEngine.js landmarks -> gesture, openness, smoothed palm / fingertip / pinch, wrist roll
-src/scene.js         Three.js point-cloud renderer: explode, scatter transition, picking, part dragging
-src/models/          shapes.js (point sampling) + jet / radial / car / brain definitions
+src/main.js               app loop, hand overlay, gesture -> action, labels, UI, backend import
+src/handTracking.js       MediaPipe wrapper (2 hands, local files then CDN, GPU then CPU)
+src/gestureEngine.js      landmarks -> gesture, openness, smoothed palm / fingertip / pinch, wrist roll
+src/scene.js              Three.js point-cloud renderer: explode, scatter transition, picking, part dragging
+src/scene/hologram.js     WebGL hologram shader and glowing edge surface
+src/import/modelFactory.js CAD object -> point cloud + hologram surface model definition
+src/api/models.js         backend health, upload progress, saved list and GLB loading
+src/models/               shapes.js (point sampling) + jet / radial / car / brain definitions
+server/index.mjs          Node HTTP server entry point
+server/app.mjs            REST routes and upload handling
+server/stl.mjs            binary / ASCII STL parser
+server/mesh.mjs           weld, repair, simplify and centre meshes
+server/glb.mjs            dependency-free GLB writer
+server/store.mjs          saved model storage under server/data/
+test/                     node:test parser, mesh, GLB and API tests
 ```
 
 To add a model: write a `build()` returning parts (`P(name, description, color, [I(cloud, explodeDirection)])`) and register it in `src/models/index.js`.
