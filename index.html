@@ -18,7 +18,7 @@
     </div>
 
     <section class="model">
-      <div class="tags"><span class="tag" id="m-cat">Machines</span><span class="tag ghost" id="m-count">0 parts</span></div>
+      <div class="tags"><span class="tag" id="m-cat">Machines</span><span class="tag ghost" id="m-count">0 parts</span><span class="tag ghost" id="m-stats"></span></div>
       <h2 id="m-name">Loading…</h2>
       <p id="m-sub"></p>
     </section>
@@ -37,6 +37,12 @@
       <h4>Try a demo design</h4>
       <div id="demo-list"></div>
       <p class="demo-hint">Explore these built-in designs, then <button id="demo-import" type="button">Import CAD</button> to open your own.</p>
+    </section>
+
+    <section class="saved">
+      <h4>Saved models <span id="saved-count" class="count">0</span></h4>
+      <div class="backend-line"><span id="backend-dot" class="dot"></span><span id="backend-state">Connecting to backend…</span></div>
+      <div id="saved-list"><p class="demo-empty">Upload an STL to build your hologram library.</p></div>
     </section>
 
     <section class="gest">
@@ -58,6 +64,7 @@
     </section>
 
     <section class="btns">
+      <button id="b-mode" class="wide" title="Switch input method">Switch to hand gestures</button>
       <button id="b-explode">Explode</button>
       <button id="b-spin" class="on">Auto-spin</button>
       <button id="b-reset">Reset view</button>
@@ -72,6 +79,7 @@
     <button id="t-feed" class="on" title="Camera background"><svg viewBox="0 0 24 24"><path d="M3 7h3l2-2h8l2 2h3v12H3z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
     <button id="t-skel" class="on" title="Hand skeleton"><svg viewBox="0 0 24 24"><path d="M7 21v-8M11 21V5M15 21V8M19 21v-7M7 13l-3-2"/></svg></button>
     <button id="t-labels" class="on" title="Part labels"><svg viewBox="0 0 24 24"><path d="M4 7h10M4 12h16M4 17h10"/><circle cx="18" cy="7" r="1.6"/></svg></button>
+    <button id="t-holo" class="on" title="Hologram surface"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></button>
     <button id="t-full" title="Fullscreen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   </div>
 
@@ -81,6 +89,7 @@
   </button>
   <div id="toast"></div>
   <div id="banner"></div>
+  <div id="drop"><div><b>Drop your STL design</b><span>Validate, simplify and build the hologram.</span></div></div>
 
   <div id="start">
     <div class="card">
@@ -90,7 +99,7 @@
       <button id="btn-demo" class="primary">Try demo designs</button>
       <button id="btn-cam" class="demo">Start camera</button>
       <button id="btn-mouse" class="ghost">Use mouse instead</button>
-      <small>Demo: drag to rotate, scroll to zoom, click a part to inspect it. Space explodes, arrow keys switch design.</small>
+      <small>Demo: drag to rotate, scroll to zoom, click a part to inspect it. Space explodes, arrow keys switch design. You can switch between mouse and hand control at any time.</small>
     </div>
   </div>
 
