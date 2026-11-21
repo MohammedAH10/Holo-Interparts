@@ -4,3 +4,4 @@ public/wasm
 public/models
 server/data
 *.log
+prompt.txt
