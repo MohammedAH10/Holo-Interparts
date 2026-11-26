@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './utils.js';
 import { HologramLayer } from './scene/hologram.js';
+import { normalizePartGroups, groupMembers, mergePartGroups, resetPartGroups } from './assembly/groups.js';
 
 const MAXP = 24; // max parts per model (must match the shader array size)
 const CAM_Z = 9.5;
@@ -105,6 +106,8 @@ export class HoloScene {
     this.shift = 0;
     this.offT = Array.from({ length: MAXP }, () => new THREE.Vector3());
     this.cache = new Map();
+    this.partGroups = [];
+    this.modelRadius = 1;
     this.onModel = null;
     this.currentPack = null;
     this.panelVisible = true;
@@ -238,7 +241,23 @@ export class HoloScene {
           if (Math.random() < 160 / Math.max(160, n)) samples.push(x,y,z,(inst.dir?.[0]||0),(inst.dir?.[1]||0),(inst.dir?.[2]||0));
         }
       });
-      meta.push({ name: p.name, desc: p.desc || '', color: p.color || '#7fa3ff', anchors, samples: new Float32Array(samples) });
+      let cx = 0, cy = 0, cz = 0, dx = 0, dy = 0, dz = 0, sn = 0;
+      for (let si = 0; si < samples.length; si += 6) {
+        cx += samples[si]; cy += samples[si + 1]; cz += samples[si + 2];
+        dx += samples[si + 3]; dy += samples[si + 4]; dz += samples[si + 5];
+        sn++;
+      }
+      const inv = sn ? 1 / sn : 0;
+      meta.push({
+        name: p.name,
+        desc: p.desc || '',
+        color: p.color || '#7fa3ff',
+        anchors,
+        samples: new Float32Array(samples),
+        center: [cx * inv, cy * inv, cz * inv],
+        dir: [dx * inv, dy * inv, dz * inv],
+        surface: p.surface || null,
+      });
     });
 
     const geo = new THREE.BufferGeometry();
@@ -249,7 +268,7 @@ export class HoloScene {
     geo.setAttribute('aRand', new THREE.BufferAttribute(rnd, 3));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 50);
-    const entry = { geo, meta, fit: FIT / Math.max(0.5, maxR), count: total };
+    const entry = { geo, meta, fit: FIT / Math.max(0.5, maxR), count: total, radius: Math.max(0.5, maxR) };
     this.cache.set(i, entry);
     return entry;
   }
@@ -265,6 +284,9 @@ export class HoloScene {
     this.parts = g.meta;
     this.fit = g.fit;
     this.count = g.count;
+    this.modelRadius = g.radius || 1;
+    this.partGroups = normalizePartGroups(this.models[i]?.partGroups, g.meta.length);
+    this.models[i].partGroups = this.partGroups.slice();
     this.index = i;
     this.hover = -1;
     this.sel = -1;
@@ -320,8 +342,80 @@ export class HoloScene {
     if (i < 0 || i >= (this.parts?.length || 0)) return;
     const v = new THREE.Vector3(dx * this.unitsPerPx, -dy * this.unitsPerPx, 0);
     v.applyQuaternion(this.group.quaternion.clone().invert()).divideScalar(Math.max(1e-4, this.group.scale.x));
-    this.offT[i].add(v);
+    const members = groupMembers(this.partGroups, i);
+    const targets = members.length ? members : [i];
+    for (const part of targets) this.offT[part].add(v);
     this.idle = 0;
+  }
+
+  partGroupSize(i) {
+    return groupMembers(this.partGroups, i).length;
+  }
+
+  partCenter(i) {
+    const part = this.parts?.[i];
+    if (!part) return [0, 0, 0];
+    const e = this.shownExplode;
+    const off = this.uniforms.uOff.value[i];
+    const c = part.center || [0, 0, 0];
+    const d = part.dir || [0, 0, 0];
+    return [c[0] + d[0] * e + off.x, c[1] + d[1] * e + off.y, c[2] + d[2] * e + off.z];
+  }
+
+  lockParts(a, b) {
+    if (!this.parts || a === b) return false;
+    if (!mergePartGroups(this.partGroups, a, b)) return false;
+    const def = this.models[this.index];
+    if (def) def.partGroups = this.partGroups.slice();
+    this.idle = 0;
+    return true;
+  }
+
+  lockNearest(i, maxDistance) {
+    if (!this.parts || i < 0 || i >= this.parts.length) return -1;
+    const origin = this.partCenter(i);
+    const group = this.partGroups[i];
+    const limit = maxDistance ?? this.modelRadius * 0.45;
+    let best = -1;
+    let bestDistance = limit;
+    for (let j = 0; j < this.parts.length; j++) {
+      if (j === i || this.partGroups[j] === group) continue;
+      const c = this.partCenter(j);
+      const d = Math.hypot(c[0] - origin[0], c[1] - origin[1], c[2] - origin[2]);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = j;
+      }
+    }
+    return best;
+  }
+
+  unlockAll() {
+    resetPartGroups(this.partGroups);
+    const def = this.models[this.index];
+    if (def) def.partGroups = this.partGroups.slice();
+    this.idle = 0;
+  }
+
+  lockSegments() {
+    if (!this.parts?.length || !this.partGroups?.length) return [];
+    const v = new THREE.Vector3();
+    const out = [];
+    const done = new Set();
+    this.group.updateMatrixWorld(true);
+    for (let i = 0; i < this.parts.length; i++) {
+      if (this.partGroupSize(i) < 2 || done.has(this.partGroups[i])) continue;
+      done.add(this.partGroups[i]);
+      const members = groupMembers(this.partGroups, i);
+      const a = this.partCenter(members[0]);
+      const sa = this._toScreen(a, v);
+      for (let k = 1; k < members.length; k++) {
+        const b = this.partCenter(members[k]);
+        const sb = this._toScreen(b, v);
+        out.push({ a: sa, b: sb, color: this.parts[members[k]]?.color || '#4fe3e0' });
+      }
+    }
+    return out;
   }
   releaseAll(snap = false) {
     for (let i = 0; i < MAXP; i++) {
