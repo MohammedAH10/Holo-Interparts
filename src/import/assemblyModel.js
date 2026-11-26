@@ -20,6 +20,7 @@ export function buildAssemblyModel(entries = [], options = {}) {
     });
   }
 
+  radius = Math.max(radius, options.radius || 0);
   const name = options.name || 'Assembly';
   const modelDef = {
     id: `assembly-${Date.now()}`,
