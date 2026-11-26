@@ -163,25 +163,39 @@ export class HoloScene {
   }
 
   appendPart(partData, cloud) {
-    if (!partData) return;
+    return this.appendParts([{ part: partData, cloud }]);
+  }
+
+  appendParts(items) {
     const def = this.models[this.index];
-    if (!def) return;
-    if ((this.parts?.length || 0) >= MAXP) return;
-    const instances = [];
-    if (cloud && (cloud.length || cloud.p?.length)) {
-      instances.push({ cloud, dir: partData.dir || [0, 0, 0], anchor: partData.anchor || [0, 0, 0] });
-    }
+    if (!def || !Array.isArray(items) || items.length === 0) return 0;
+    const room = MAXP - (this.parts?.length || 0);
+    if (room <= 0) return 0;
     if (!def.extraParts) def.extraParts = [];
-    def.extraParts.push({
-      name: partData.name || 'Part',
-      desc: partData.desc || '',
-      color: partData.color || '#ffaa44',
-      instances,
-    });
+    let added = 0;
+    for (const item of items.slice(0, room)) {
+      const partData = item?.part;
+      const cloud = item?.cloud;
+      if (!partData) continue;
+      const instances = [];
+      if (cloud && (cloud.length || cloud.p?.length)) {
+        instances.push({ cloud, dir: partData.dir || [0, 0, 0], anchor: partData.anchor || [0, 0, 0] });
+      }
+      def.extraParts.push({
+        name: partData.name || 'Part',
+        desc: partData.desc || '',
+        color: partData.color || '#ffaa44',
+        instances,
+        surface: partData.surface || item.surface || null,
+      });
+      added++;
+    }
+    if (!added) return 0;
     this.cache.delete(this.index);
     this.releaseAll(true);
     this.pending = this.index;
     this.scatterTarget = 1;
+    return added;
   }
 
   _geometry(i) {
