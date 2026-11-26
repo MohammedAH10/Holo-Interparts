@@ -1019,8 +1019,9 @@ function drawZoom(a, b) {
 }
 
 function drawLabels() {
-  const e = clamp((scene.shownExplode - 0.1) / 0.3, 0, 1);
-  if (e <= 0.01 || scene.uniforms.uScatter.value > 0.3) return;
+  if (scene.uniforms.uScatter.value > 0.3) return;
+  const e = scene.hasSurface ? 1 : clamp((scene.shownExplode - 0.1) / 0.3, 0, 1);
+  if (e <= 0.01) return;
   const pts = scene.labelPoints();
   const c = scene.centerScreen();
   const panelR = W > 900 && !ui.controlsHidden ? 310 : 0;
