@@ -337,7 +337,12 @@ function showPart(i) {
     pcName.value = p ? p.name : '';
     pcName.placeholder = p ? 'Part title' : 'No part selected';
   }
-  if (pcDesc) pcDesc.textContent = p ? p.desc : 'Point at a part, or click one, to read what it does.';
+  if (pcDesc) {
+    const linked = p && scene.partGroupSize ? scene.partGroupSize(i) - 1 : 0;
+    pcDesc.textContent = p
+      ? `${p.desc}${linked > 0 ? ` · linked to ${linked} part${linked === 1 ? '' : 's'}` : ''}`
+      : 'Point at a part, or click one, to read what it does.';
+  }
   if (pcDot) pcDot.style.background = p ? p.color : '#555a70';
 }
 
@@ -384,6 +389,7 @@ if (bNext) bNext.onclick = () => { if (scene) scene.next(); };
 
 const bImport = $('b-import');
 const bAddPart = $('b-add');
+const bUnlock = $('b-unlock');
 const cadInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx', multiple: true });
 const partInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx', multiple: true });
 
@@ -604,6 +610,11 @@ addEventListener('drop', async (event) => {
   }
 });
 
+if (bUnlock) bUnlock.onclick = () => {
+  if (!scene) return;
+  scene.unlockAll();
+  toast('Parts unlinked');
+};
 if (bAddPart) bAddPart.onclick = () => partInput.click();
 partInput.onchange = async () => {
   const files = [...(partInput.files || [])];
@@ -796,6 +807,8 @@ let grab = null;
 let lastHover = { i: -1, t: 0 };
 let dwell = { i: -1, t: 0 };
 let peaceCool = 0;
+let lockCool = 0;
+let lastTouched = { i: -1, t: 0 };
 const prevPalm = new Map();
 let activeKey = '';
 
@@ -806,7 +819,7 @@ function setActive(key) {
 }
 
 function endGrab() {
-  if (grab) scene.releaseAll();
+  if (grab) lastTouched = { i: grab.part, t: performance.now() / 1000 };
   grab = null;
 }
 
@@ -847,6 +860,19 @@ function control(t, dt) {
 
   if (g === 'OPEN' || g === 'FIST' || g === 'NONE') {
     scene.explodeTarget = g === 'FIST' ? 0 : clamp((h.openness - 0.12) / 0.78, 0, 1);
+    if (g === 'FIST' && t > lockCool) {
+      const recent = t - lastTouched.t < 2.5 ? lastTouched.i : -1;
+      const idx = recent >= 0 ? recent : (scene.sel >= 0 ? scene.sel : scene.hover);
+      const near = idx >= 0 ? scene.lockNearest(idx) : -1;
+      if (near >= 0 && scene.lockParts(idx, near)) {
+        lockCool = t + 1.2;
+        scene.setHover(near);
+        scene.setSel(idx);
+        showPart(idx);
+        toast(`Linked ${scene.parts[idx].name} to ${scene.parts[near].name}`);
+        setActive('LOCK');
+      }
+    }
     const prev = prevPalm.get(h.id);
     if (prev) {
       const dx = palmPx.x - prev.x, dy = palmPx.y - prev.y;
@@ -862,6 +888,7 @@ function control(t, dt) {
       scene.setHover(idx);
       if (idx >= 0) {
         lastHover = { i: idx, t };
+        lastTouched = { i: idx, t };
         showPart(idx);
       }
       if (idx >= 0 && idx === dwell.i) {
@@ -919,6 +946,7 @@ addEventListener('pointerup', (e) => {
   if (Math.hypot(e.clientX - mouseStart.x, e.clientY - mouseStart.y) < 5) {
     const idx = scene.pick(e.clientX, e.clientY, 80);
     scene.setSel(idx === scene.sel ? -1 : idx);
+    if (idx >= 0) lastTouched = { i: idx, t: performance.now() / 1000 };
     showPart(scene.sel);
   }
 });
@@ -935,6 +963,7 @@ addEventListener('keydown', (e) => {
   } else if (e.key === 'ArrowRight') scene.next(1);
   else if (e.key === 'ArrowLeft') scene.next(-1);
   else if (e.key.toLowerCase() === 'r') scene.resetView();
+  else if (e.key.toLowerCase() === 'u') { scene.unlockAll(); toast('Parts unlinked'); }
   else if (e.key.toLowerCase() === 'h') setControlsHidden(!ui.controlsHidden);
   else if (e.key >= '1' && e.key <= String(MODELS.length)) scene.setModel(+e.key - 1);
 });
@@ -1082,11 +1111,36 @@ function drawLabels() {
   ctx.restore();
 }
 
+function drawLinks() {
+  const links = scene.lockSegments ? scene.lockSegments() : [];
+  if (!links.length) return;
+  ctx.save();
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([5, 5]);
+  ctx.shadowBlur = 10;
+  for (const link of links) {
+    ctx.strokeStyle = link.color;
+    ctx.shadowColor = link.color;
+    ctx.beginPath();
+    ctx.moveTo(link.a.x, link.a.y);
+    ctx.lineTo(link.b.x, link.b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = link.color;
+    ctx.beginPath();
+    ctx.arc(link.b.x, link.b.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.setLineDash([5, 5]);
+  }
+  ctx.restore();
+}
+
 function drawOverlay() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
   const tLabels = $('t-labels');
   const tSkel = $('t-skel');
+  drawLinks();
   if (tLabels ? ui.labels : ui.labels) drawLabels();
   const live = perc.hands.filter((h) => !h.held);
   if (ui.skeleton) for (const h of live) drawHand(h);
