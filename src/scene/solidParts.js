@@ -7,12 +7,14 @@ export class SolidPartLayer {
     this.group.name = 'solid-parts';
     parent.add(this.group);
     this.enabled = true;
+    this.center = [0, 0, 0];
     this.entries = [];
     this.count = 0;
   }
 
-  setParts(parts) {
+  setParts(parts, center = [0, 0, 0]) {
     this.clear();
+    this.center = center || [0, 0, 0];
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       if (!part?.surface) continue;
@@ -28,6 +30,7 @@ export class SolidPartLayer {
       const mesh = new THREE.Mesh(part.surface, material);
       mesh.name = `solid-${part.name || i}`;
       mesh.frustumCulled = false;
+      mesh.position.set(-this.center[0], -this.center[1], -this.center[2]);
       this.group.add(mesh);
 
       let edges = null;
@@ -57,7 +60,13 @@ export class SolidPartLayer {
   update(offsets, hover = -1, selected = -1) {
     for (const entry of this.entries) {
       const offset = offsets[entry.index];
-      if (offset) entry.mesh.position.copy(offset);
+      if (offset) {
+        entry.mesh.position.set(
+          offset.x - this.center[0],
+          offset.y - this.center[1],
+          offset.z - this.center[2],
+        );
+      }
       const hot = entry.index === hover || entry.index === selected;
       entry.material.emissiveIntensity = hot ? 1.35 : entry.baseEmissive;
       if (entry.edges) entry.edges.material.opacity = hot ? 0.85 : 0.42;

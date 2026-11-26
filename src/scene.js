@@ -273,7 +273,7 @@ export class HoloScene {
     geo.setAttribute('aRand', new THREE.BufferAttribute(rnd, 3));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 50);
-    const entry = { geo, meta, fit: FIT / Math.max(0.5, maxR), count: total, radius: Math.max(0.5, maxR), sources: parts };
+    const entry = { geo, meta, fit: FIT / Math.max(0.5, maxR), count: total, radius: Math.max(0.5, maxR), sources: parts, center: c };
     this.cache.set(i, entry);
     return entry;
   }
@@ -287,7 +287,7 @@ export class HoloScene {
     this.group.add(this.points);
     this.parts = g.meta;
     this.partSources = g.sources || [];
-    this.solidParts.setParts(this.parts);
+    this.solidParts.setParts(this.parts, g.center);
     this.solidAll = this.parts.length > 0 && this.solidParts.count === this.parts.length;
     this.points.visible = !this.solidAll || !this.surfaceEnabled;
     this.fit = g.fit;

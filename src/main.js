@@ -51,7 +51,7 @@ function toast(msg) {
 const ui = { skeleton: true, labels: true, feed: false, controlsHidden: false };
 let trackingState = 'Off';
 let holoOn = true;
-try { holoOn = localStorage.getItem('holo.surface') !== 'off'; } catch { /* private mode */ }
+try { holoOn = localStorage.getItem('holo.solid') !== 'off'; } catch { /* private mode */ }
 let scene;
 const backendState = { online: false, checked: false, info: null, models: [], loaded: new Map() };
 
@@ -317,8 +317,8 @@ scene.onModel = (i, def, g) => {
   markSavedActive();
   const holoButton = $('t-holo');
   if (holoButton) {
-    holoButton.disabled = !def.surface;
-    holoButton.classList.toggle('on', holoOn && !!def.surface);
+    holoButton.disabled = !scene.hasSurface;
+    holoButton.classList.toggle('on', holoOn && scene.hasSurface);
   }
   toast(def.name || 'Model');
 };
@@ -630,8 +630,8 @@ if (tHolo) {
     holoOn = !holoOn;
     scene.setHologramEnabled(holoOn);
     tHolo.classList.toggle('on', holoOn && !!scene.hasSurface);
-    try { localStorage.setItem('holo.surface', holoOn ? 'on' : 'off'); } catch { /* private mode */ }
-    toast(holoOn ? 'Hologram surface on' : 'Hologram surface off');
+    try { localStorage.setItem('holo.solid', holoOn ? 'on' : 'off'); } catch { /* private mode */ }
+    toast(holoOn ? 'Solid surface on' : 'Point cloud on');
   };
 }
 const tFull = $('t-full');

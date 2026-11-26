@@ -1,8 +1,8 @@
 {
   "name": "gesture-agent-3d",
   "private": true,
-  "version": "2.2.0",
-  "description": "HoloHand - hand-controlled exploded 3D views (MediaPipe + Three.js)",
+  "version": "2.3.0",
+  "description": "HoloHand - hand-controlled CAD assembly with solid parts (MediaPipe + Three.js)",
   "type": "module",
   "scripts": {
     "dev": "vite --open",

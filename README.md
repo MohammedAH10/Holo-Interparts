@@ -1,12 +1,13 @@
 # Holo-Interparts-3D
 ## Dev / Creator = MohammedAH10
 
-Control exploded 3D models with your bare hands. Your webcam is the background, a hand skeleton and a gold ring follow your hand,
-and each model is a glowing point cloud that pulls apart into labelled parts so you can see what is inside.
+Import CAD parts, assemble them with your bare hands, and lock them together. Your webcam is the background,
+a hand skeleton and a gold ring follow your hand, and imported parts render as solid lit CAD meshes with glowing
+edges. Labels stay visible while you work, and every part title can be edited in the part card.
 
 Hand tracking and rendering run in the browser with MediaPipe Hand Landmarker + Three.js/WebGL.
 An optional local Node backend processes STL uploads, validates and simplifies the mesh, and
-serves it back as a compact GLB that the browser draws as a glowing hologram surface.
+serves it back as a compact GLB that the browser draws as a solid CAD surface.
 
 ## Run
 
@@ -42,6 +43,32 @@ npm start
 
 Then open http://localhost:8787. Runtime models are stored in `server/data/` and are ignored by git.
 
+## Importing parts
+
+- **Import CAD** accepts one or more `.stl`, `.obj`, `.ply`, `.gltf`, `.glb` or `.fbx` files.
+- One file opens as a single solid part. Several files become a scattered assembly you can move together.
+- **Add parts** appends one or more files to the current model, up to the shader limit of 24 parts.
+- Drag files onto the workspace too: one file opens it, several build an assembly.
+- A single `.stl` import still uses the backend and appears in **Saved models**. Multi-file imports and
+  non-STL files are processed locally in the browser.
+- Solid models show their labels immediately. Select a part and edit its title directly in the part card.
+- Use the cube button in the top-right toolbar to switch between the solid surface and the point cloud.
+
+## Assembly gestures
+
+Pinch a part to grab it. It stays where you release it. Drag it near another part, then make a fist to lock the
+two groups together. Locked parts move as one and are joined by a glowing link. Use **Unlink parts** or press
+`U` to release every group.
+
+| Gesture | Effect |
+|---|---|
+| Open hand / move | Rotate and tilt the assembly |
+| Fist | Lock the touched or selected part to its nearest neighbour |
+| Point (index finger) | Highlight the part under your fingertip; hold still to select it |
+| Pinch while over a part | Grab and drag it into place |
+| Two hands | Move them apart or together to zoom |
+| Peace sign (hold ~0.3 s) | Jump to the next model |
+
 ## STL backend
 
 The backend is dependency-free Node.js and only accepts `.stl` files:
@@ -66,19 +93,10 @@ server-side validation, simplification or the saved library.
 
 ## Demo designs
 
-Four designs are hardcoded and ship with the app, so you can try the whole exploded-view experience before
-importing anything: **Turbofan Jet Engine**, **Radial Aircraft Engine**, **Sports Car** and **Human Brain**.
-
-Click **Try demo designs** on the start screen (no camera needed — mouse controls are enabled) or use the
-**Try a demo design** list in the left panel. The bottom chip bar switches between them too. When you are ready for
-your own geometry, use **Import CAD** (`.stl`, `.obj`, `.ply`, `.gltf`, `.glb`, `.fbx`) or **Add part** to drop a
-single part into the current design.
-
-STL uploads go through the backend and appear in the **Saved models** list. You can click
-**Import CAD** or drag a file straight onto the workspace. Imported CAD gets
-a translucent WebGL hologram surface with a Fresnel rim, scanlines and glowing edges. The
-surface fades into the point cloud as you explode the model; toggle it with the cube button
-in the top-right toolbar. Use the small **×** in a saved row to delete it from the library.
+Four point-cloud designs are hardcoded and ship with the app: **Turbofan Jet Engine**, **Radial Aircraft Engine**,
+**Sports Car** and **Human Brain**. Click **Try demo designs** on the start screen (no camera needed — mouse
+controls are enabled) or use the **Try a demo design** list in the left panel. Import your own CAD to work with
+solid, linkable parts.
 
 ## Models
 
@@ -94,23 +112,10 @@ for mouse control, and switch whenever you like with the **Switch to hand gestur
 the left panel. Switching to mouse stops the webcam track (the camera light turns off); switching back asks for the camera
 again. Mouse drag/zoom/click keep working while hand gestures are on.
 
-## Gestures
-
-| Gesture | Effect |
-|---|---|
-|---|---|
-| Open hand slowly | Explode the model. The white arc on the gold ring shows how far. |
-| Close your hand / fist | Pull it back together |
-| Move or twist your hand | Rotate and tilt the model |
-| Point (index finger) | Highlight the part under your fingertip. Hold still to lock it. |
-| Pinch while over a part | Grab it, drag it out, release to snap it back |
-| Two hands | Move them apart or together to zoom |
-| Peace sign (hold ~0.3 s) | Jump to the next model |
-
 ## Mouse and keyboard
 
-Drag = rotate · scroll = zoom · click a part = inspect it · `Space` = explode / assemble · `←` `→` or `1`–`4` = switch model · `R` = reset view.
-Sliders in the left panel control the explosion and its intensity. The top-right buttons toggle camera background, hand skeleton, labels and fullscreen.
+Drag = rotate · scroll = zoom · click a part = inspect it · `U` = unlink parts · `←` `→` or `1`–`4` = switch model ·
+`R` = reset view. The top-right buttons toggle camera background, hand skeleton, labels, solid surface and fullscreen.
 
 ## Full view (retractable controls)
 
@@ -121,7 +126,8 @@ Click the tab again (or press `H`) to bring the controls back. The choice is rem
 ## Tips
 
 - Even light and a plain background help. Keep your hand 40–80 cm from the camera, palm facing it.
-- Open and close your hand slowly. The peace sign needs a short hold so it does not trigger by accident.
+- Pinch, drag close to another part, then make a fist to link them.
+- The peace sign needs a short hold so it does not trigger by accident.
 
 ## Files
 
@@ -129,9 +135,12 @@ Click the tab again (or press `H`) to bring the controls back. The choice is rem
 src/main.js               app loop, hand overlay, gesture -> action, labels, UI, backend import
 src/handTracking.js       MediaPipe wrapper (2 hands, local files then CDN, GPU then CPU)
 src/gestureEngine.js      landmarks -> gesture, openness, smoothed palm / fingertip / pinch, wrist roll
-src/scene.js              Three.js point-cloud renderer: explode, scatter transition, picking, part dragging
-src/scene/hologram.js     WebGL hologram shader and glowing edge surface
-src/import/modelFactory.js CAD object -> point cloud + hologram surface model definition
+src/scene.js              Three.js renderer: solid parts, point clouds, picking, dragging, part groups
+src/scene/solidParts.js   lit CAD meshes with glowing edge overlays and hover highlights
+src/assembly/groups.js    pure part-link group helpers
+src/import/modelFactory.js CAD object -> point cloud + solid surface model definition
+src/import/assemblyModel.js multi-file CAD imports -> assembly model definition
+src/editing/addPart.js    load a CAD file, align it to a pack, return a part + cloud + surface
 src/api/models.js         backend health, upload progress, saved list and GLB loading
 src/models/               shapes.js (point sampling) + jet / radial / car / brain definitions
 server/index.mjs          Node HTTP server entry point
@@ -140,7 +149,8 @@ server/stl.mjs            binary / ASCII STL parser
 server/mesh.mjs           weld, repair, simplify and centre meshes
 server/glb.mjs            dependency-free GLB writer
 server/store.mjs          saved model storage under server/data/
-test/                     node:test parser, mesh, GLB and API tests
+test/                     node:test parser, mesh, GLB, API and assembly tests
 ```
 
-To add a model: write a `build()` returning parts (`P(name, description, color, [I(cloud, explodeDirection)])`) and register it in `src/models/index.js`.
+To add a demo: write a `build()` returning parts (`P(name, description, color, [I(cloud)])`) and register it in
+`src/models/index.js`. Imported CAD is the recommended path for real assemblies.
