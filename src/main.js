@@ -913,6 +913,7 @@ function control(t, dt) {
         }
       } else {
         scene.dragPart(grab.part, pp.x - grab.last.x, pp.y - grab.last.y);
+        if (h.rollDelta) scene.rotatePart(grab.part, h.rollDelta * 1.4);
         grab.last = pp;
       }
     } else if (g === 'PEACE') {

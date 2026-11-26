@@ -32,19 +32,25 @@ export class SolidPartLayer {
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      const mesh = new THREE.Mesh(part.surface, material);
+      const geometry = part.surface.clone();
+      geometry.translate(-this.center[0], -this.center[1], -this.center[2]);
+      const pivot = new THREE.Group();
+      pivot.position.set(part.center?.[0] || 0, part.center?.[1] || 0, part.center?.[2] || 0);
+      this.group.add(pivot);
+
+      const mesh = new THREE.Mesh(geometry, material);
       mesh.name = `solid-${part.name || i}`;
       mesh.frustumCulled = false;
       mesh.renderOrder = 3;
-      mesh.position.set(-this.center[0], -this.center[1], -this.center[2]);
-      this.group.add(mesh);
+      mesh.position.set(-(part.center?.[0] || 0), -(part.center?.[1] || 0), -(part.center?.[2] || 0));
+      pivot.add(mesh);
 
       let edges = null;
-      const triangles = part.surface.index
-        ? part.surface.index.count / 3
-        : (part.surface.getAttribute('position')?.count || 0) / 3;
+      const triangles = geometry.index
+        ? geometry.index.count / 3
+        : (geometry.getAttribute('position')?.count || 0) / 3;
       if (triangles > 0 && triangles <= 180_000) {
-        const edgeGeometry = new THREE.EdgesGeometry(part.surface, 34);
+        const edgeGeometry = new THREE.EdgesGeometry(geometry, 34);
         const edgeMaterial = new THREE.LineBasicMaterial({
           color,
           transparent: true,
@@ -58,22 +64,29 @@ export class SolidPartLayer {
         mesh.add(edges);
       }
 
-      this.entries.push({ index: i, mesh, edges, material, baseEmissive: 0.55, baseOpacity: 0.3 });
+      this.entries.push({
+        index: i,
+        pivot,
+        mesh,
+        edges,
+        geometry,
+        material,
+        partCenter: [part.center?.[0] || 0, part.center?.[1] || 0, part.center?.[2] || 0],
+        baseEmissive: 0.55,
+        baseOpacity: 0.3,
+      });
     }
     this.count = this.entries.length;
     this.group.visible = this.enabled && this.count > 0;
   }
 
-  update(offsets, hover = -1, selected = -1) {
+  update(offsets, hover = -1, selected = -1, rotations = null) {
     for (const entry of this.entries) {
       const offset = offsets[entry.index];
-      if (offset) {
-        entry.mesh.position.set(
-          offset.x - this.center[0],
-          offset.y - this.center[1],
-          offset.z - this.center[2],
-        );
-      }
+      const c = entry.partCenter;
+      entry.pivot.position.set(c[0] + (offset?.x || 0), c[1] + (offset?.y || 0), c[2] + (offset?.z || 0));
+      const rotation = rotations?.[entry.index];
+      if (rotation) entry.mesh.quaternion.copy(rotation);
       const hot = entry.index === hover || entry.index === selected;
       entry.material.emissiveIntensity = hot ? 1.15 : entry.baseEmissive;
       entry.material.opacity = hot ? 0.58 : entry.baseOpacity;
@@ -89,10 +102,11 @@ export class SolidPartLayer {
 
   clear() {
     for (const entry of this.entries) {
-      this.group.remove(entry.mesh);
+      this.group.remove(entry.pivot);
+      entry.mesh.remove(entry.edges);
+      entry.geometry.dispose();
       entry.material.dispose();
       if (entry.edges) {
-        entry.mesh.remove(entry.edges);
         entry.edges.geometry.dispose();
         entry.edges.material.dispose();
       }

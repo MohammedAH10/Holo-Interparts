@@ -109,6 +109,7 @@ export class HoloScene {
     this.sel = -1;
     this.shift = 0;
     this.offT = Array.from({ length: MAXP }, () => new THREE.Vector3());
+    this.partRot = Array.from({ length: MAXP }, () => new THREE.Quaternion());
     this.cache = new Map();
     this.partGroups = [];
     this.modelRadius = 1;
@@ -288,6 +289,7 @@ export class HoloScene {
     this.group.add(this.points);
     this.parts = g.meta;
     this.partSources = g.sources || [];
+    this.partRot.forEach((q) => q.identity());
     this.solidParts.setParts(this.parts, g.center);
     this.solidAll = this.parts.length > 0 && this.solidParts.count === this.parts.length;
     this.points.visible = !this.solidAll || !this.surfaceEnabled;
@@ -366,6 +368,32 @@ export class HoloScene {
     this.releaseAll();
     this.setSel(-1);
   }
+  rotatePart(i, angle) {
+    if (!this.parts?.[i] || !Number.isFinite(angle) || Math.abs(angle) < 1e-5) return;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
+    const members = groupMembers(this.partGroups, i);
+    if (members.length <= 1) {
+      this.partRot[i].premultiply(q);
+      this.idle = 0;
+      return;
+    }
+    const center = [0, 0, 0];
+    for (const part of members) {
+      const c = this.partCenter(part);
+      center[0] += c[0]; center[1] += c[1]; center[2] += c[2];
+    }
+    center[0] /= members.length; center[1] /= members.length; center[2] /= members.length;
+    const v = new THREE.Vector3();
+    for (const part of members) {
+      const c = this.partCenter(part);
+      v.set(c[0] - center[0], c[1] - center[1], c[2] - center[2]).applyQuaternion(q);
+      const base = this.parts[part].center || [0, 0, 0];
+      this.offT[part].set(center[0] + v.x - base[0], center[1] + v.y - base[1], center[2] + v.z - base[2]);
+      this.partRot[part].premultiply(q);
+    }
+    this.idle = 0;
+  }
+
   dragPart(i, dx, dy) {
     if (i < 0 || i >= (this.parts?.length || 0)) return;
     const v = new THREE.Vector3(dx * this.unitsPerPx, -dy * this.unitsPerPx, 0);
@@ -519,7 +547,7 @@ export class HoloScene {
       off[i].lerp(this.offT[i], 1 - Math.exp(-(grabbed ? 16 : 4) * dt));
     }
     this.uniforms.uTime.value = t;
-    this.solidParts.update(this.uniforms.uOff.value, this.hover, this.sel);
+    this.solidParts.update(this.uniforms.uOff.value, this.hover, this.sel, this.partRot);
     this.group.rotation.set(this.rot.x, this.rot.y, this.rot.z, 'YXZ');
     this.group.scale.setScalar(this.fit * this.scale);
     this.group.position.x = this.shift;
