@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './utils.js';
 import { SolidPartLayer } from './scene/solidParts.js';
-import { normalizePartGroups, groupMembers, mergePartGroups, resetPartGroups } from './assembly/groups.js';
+import { normalizePartGroups, groupMembers, mergePartGroups, resetPartGroups, detachPart as detachPartGroup } from './assembly/groups.js';
 
 const MAXP = 24; // max parts per model (must match the shader array size)
 const CAM_Z = 9.5;
@@ -181,6 +181,7 @@ export class HoloScene {
       added++;
     }
     if (!added) return 0;
+    def.partGroups = normalizePartGroups(def.partGroups, (this.parts?.length || 0) + added);
     this.cache.delete(this.index);
     this.releaseAll(true);
     this.pending = this.index;
@@ -413,6 +414,14 @@ export class HoloScene {
       }
     }
     return best;
+  }
+
+  detachPart(i) {
+    if (!detachPartGroup(this.partGroups, i)) return false;
+    const def = this.models[this.index];
+    if (def) def.partGroups = this.partGroups.slice();
+    this.idle = 0;
+    return true;
   }
 
   unlockAll() {

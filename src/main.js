@@ -337,14 +337,24 @@ function showPart(i) {
     pcName.value = p ? p.name : '';
     pcName.placeholder = p ? 'Part title' : 'No part selected';
   }
+  const linked = p && scene.partGroupSize ? scene.partGroupSize(i) - 1 : 0;
   if (pcDesc) {
-    const linked = p && scene.partGroupSize ? scene.partGroupSize(i) - 1 : 0;
     pcDesc.textContent = p
-      ? `${p.desc}${linked > 0 ? ` · linked to ${linked} part${linked === 1 ? '' : 's'}` : ''}`
+      ? `${p.desc}${linked > 0 ? ` · linked to ${linked} part${linked === 1 ? '' : 's'}` : ' · independent part'}`
       : 'Point at a part, or click one, to read what it does.';
   }
+  const detach = $('b-detach');
+  if (detach) detach.disabled = !(p && linked > 0);
   if (pcDot) pcDot.style.background = p ? p.color : '#555a70';
 }
+
+const bDetach = $('b-detach');
+if (bDetach) bDetach.onclick = () => {
+  const i = scene?.sel ?? -1;
+  if (i < 0 || !scene.detachPart(i)) return;
+  toast(`${scene.parts[i].name} is independent again`);
+  showPart(i);
+};
 
 const pcNameInput = $('pc-name');
 if (pcNameInput) {
@@ -945,6 +955,12 @@ addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowLeft') scene.next(-1);
   else if (e.key.toLowerCase() === 'r') scene.resetView();
   else if (e.key.toLowerCase() === 'u') { scene.unlockAll(); toast('Parts unlinked'); }
+  else if (e.key.toLowerCase() === 'd' && scene.sel >= 0) {
+    if (scene.detachPart(scene.sel)) {
+      toast(`${scene.parts[scene.sel].name} detached`);
+      showPart(scene.sel);
+    }
+  }
   else if (e.key.toLowerCase() === 'h') setControlsHidden(!ui.controlsHidden);
   else if (e.key >= '1' && e.key <= String(MODELS.length)) scene.setModel(+e.key - 1);
 });

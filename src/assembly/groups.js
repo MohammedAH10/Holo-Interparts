@@ -43,6 +43,17 @@ export function mergePartGroups(groups, a, b) {
   return true;
 }
 
+export function detachPart(groups, index) {
+  if (!Array.isArray(groups) || !Number.isInteger(index) || index < 0 || index >= groups.length) return false;
+  if (groupSize(groups, index) < 2) return false;
+  let next = 0;
+  for (const value of groups) {
+    if (Number.isInteger(value) && value >= next) next = value + 1;
+  }
+  groups[index] = next;
+  return true;
+}
+
 export function resetPartGroups(groups) {
   if (!Array.isArray(groups)) return groups;
   for (let i = 0; i < groups.length; i++) groups[i] = i;

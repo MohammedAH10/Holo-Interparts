@@ -5,6 +5,7 @@ import {
   groupMembers,
   groupSize,
   isLinked,
+  detachPart,
   mergePartGroups,
   normalizePartGroups,
   resetPartGroups,
@@ -35,6 +36,17 @@ test('merges whole groups and refuses empty or repeated merges', () => {
   assert.deepEqual(groupMembers(groups, 4), [0, 1, 2, 3, 4]);
   assert.equal(mergePartGroups(groups, 3, 2), false);
   assert.equal(mergePartGroups(groups, -1, 2), false);
+});
+
+test('detaches one part without splitting the rest of its group', () => {
+  const groups = createPartGroups(5);
+  mergePartGroups(groups, 0, 1);
+  mergePartGroups(groups, 0, 2);
+  assert.equal(detachPart(groups, 2), true);
+  assert.deepEqual(groupMembers(groups, 0), [0, 1]);
+  assert.deepEqual(groupMembers(groups, 2), [2]);
+  assert.equal(detachPart(groups, 2), false);
+  assert.equal(detachPart(groups, 9), false);
 });
 
 test('resets groups back to one per part', () => {
