@@ -804,6 +804,7 @@ let lastHover = { i: -1, t: 0 };
 let dwell = { i: -1, t: 0 };
 let peaceCool = 0;
 let lockCool = 0;
+let detachCool = 0;
 let lastTouched = { i: -1, t: 0 };
 const prevPalm = new Map();
 let activeKey = '';
@@ -854,20 +855,30 @@ function control(t, dt) {
   const g = h.gesture;
   const palmPx = { x: h.palm.x * W, y: h.palm.y * H };
 
-  if (g === 'OPEN' || g === 'FIST' || g === 'NONE') {
-    if (g === 'FIST' && t > lockCool) {
-      const recent = t - lastTouched.t < 2.5 ? lastTouched.i : -1;
-      const idx = recent >= 0 ? recent : (scene.sel >= 0 ? scene.sel : scene.hover);
-      const near = idx >= 0 ? scene.lockNearest(idx) : -1;
-      if (near >= 0 && scene.lockParts(idx, near)) {
-        lockCool = t + 1.2;
-        scene.setHover(near);
-        scene.setSel(idx);
-        showPart(idx);
-        toast(`Linked ${scene.parts[idx].name} to ${scene.parts[near].name}`);
-        setActive('LOCK');
-      }
+  let action = '';
+  const recent = t - lastTouched.t < 2.5 ? lastTouched.i : -1;
+  const target = recent >= 0 ? recent : (scene.sel >= 0 ? scene.sel : scene.hover);
+  if (g === 'ROCK' && t > lockCool) {
+    const near = target >= 0 ? scene.lockNearest(target) : -1;
+    if (near >= 0 && scene.lockParts(target, near)) {
+      lockCool = t + 1.2;
+      scene.setHover(near);
+      scene.setSel(target);
+      showPart(target);
+      toast(`Locked ${scene.parts[target].name} to ${scene.parts[near].name}`);
+      action = 'ROCK';
     }
+  } else if (g === 'FIST' && t > detachCool && target >= 0) {
+    if (scene.detachPart(target)) {
+      detachCool = t + 0.9;
+      scene.setSel(target);
+      showPart(target);
+      toast(`${scene.parts[target].name} is independent again`);
+      action = 'FIST';
+    }
+  }
+
+  if (g === 'OPEN' || g === 'FIST' || g === 'NONE') {
     const prev = prevPalm.get(h.id);
     if (prev) {
       const dx = palmPx.x - prev.x, dy = palmPx.y - prev.y;
@@ -875,7 +886,7 @@ function control(t, dt) {
     }
     if (h.rollDelta) scene.rollBy(h.rollDelta * 0.7);
     scene.setHover(-1);
-    setActive('MOVE');
+    setActive(action || 'MOVE');
   } else {
     if (g === 'POINT') {
       const idx = scene.pick(h.tip.x * W, h.tip.y * H, 95);
