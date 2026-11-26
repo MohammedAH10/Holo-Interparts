@@ -7,6 +7,7 @@ import { clamp } from './utils.js';
 import { addPartFromFile } from './editing/addPart.js';
 import { loadModelFile } from './import/loaders.js';
 import { buildImportedModel } from './import/modelFactory.js';
+import { buildAssemblyModel } from './import/assemblyModel.js';
 import {
   ApiError,
   BackendUnavailableError,
@@ -367,8 +368,8 @@ if (bNext) bNext.onclick = () => { if (scene) scene.next(); };
 
 const bImport = $('b-import');
 const bAddPart = $('b-add');
-const cadInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx' });
-const partInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx' });
+const cadInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx', multiple: true });
+const partInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx', multiple: true });
 
 function formatCount(value) {
   return Number(value || 0).toLocaleString();
@@ -458,13 +459,96 @@ async function importCadFile(file) {
   return importLocalCad(file);
 }
 
+function shiftCloud(cloud, x, y, z) {
+  if (!cloud?.length) return cloud;
+  const out = new Float32Array(cloud.length);
+  for (let i = 0; i < cloud.length; i += 3) {
+    out[i] = cloud[i] + x;
+    out[i + 1] = cloud[i + 1] + y;
+    out[i + 2] = cloud[i + 2] + z;
+  }
+  return out;
+}
+
+async function importFilesAsAssembly(files) {
+  const entries = [];
+  for (let i = 0; i < files.length; i++) {
+    toast(`Importing part ${i + 1}/${files.length}…`);
+    try {
+      const entry = await addPartFromFile(files[i], null, { align: false });
+      entries.push(entry);
+    } catch (error) {
+      console.warn(`Could not import ${files[i].name}`, error);
+    }
+  }
+  if (!entries.length) throw new Error('None of those files could be imported');
+
+  const maxRadius = Math.max(...entries.map((entry) => entry.radius || 1), 1);
+  const cell = maxRadius * 2.25;
+  const cols = Math.ceil(Math.sqrt(entries.length));
+  const rows = Math.ceil(entries.length / cols);
+  let radius = 0;
+
+  const placed = entries.map((entry, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = (col - (cols - 1) / 2) * cell;
+    const y = ((rows - 1) / 2 - row) * cell;
+    const cloud = shiftCloud(entry.cloud, x, y, 0);
+    entry.surface?.translate(x, y, 0);
+    const part = {
+      ...entry.part,
+      anchor: [entry.part.anchor[0] + x, entry.part.anchor[1] + y, entry.part.anchor[2]],
+      surface: entry.surface,
+    };
+    radius = Math.max(radius, Math.hypot(x, y, 0) + (entry.radius || 1));
+    return { ...entry, part, cloud };
+  });
+
+  const { modelDef } = buildAssemblyModel(placed, {
+    name: `Assembly · ${placed.length} parts`,
+    radius,
+  });
+  const idx = registerModel(modelDef);
+  scene.setModel(idx);
+  toast(`${placed.length} parts imported — pinch one and lock it to another`);
+  return idx;
+}
+
+async function importCadFiles(files) {
+  const list = [...(files || [])];
+  if (!list.length) return null;
+  if (list.length === 1) return importCadFile(list[0]);
+  return importFilesAsAssembly(list);
+}
+
+async function appendCadFiles(files) {
+  if (!scene || scene.models.length === 0) return 0;
+  const pack = scene.getPack();
+  const items = [];
+  for (let i = 0; i < files.length; i++) {
+    toast(`Adding part ${i + 1}/${files.length}…`);
+    try {
+      const { part, cloud, surface } = await addPartFromFile(files[i], pack, { align: true });
+      part.surface = surface;
+      items.push({ part, cloud, surface });
+    } catch (error) {
+      console.warn(`Could not add ${files[i].name}`, error);
+    }
+  }
+  const added = scene.appendParts ? scene.appendParts(items) : 0;
+  if (added) toast(added === 1 ? 'Part added' : `${added} parts added`);
+  else toast('No parts added');
+  return added;
+}
+
 if (bImport) bImport.onclick = () => cadInput.click();
 cadInput.onchange = async () => {
-  const file = cadInput.files?.[0];
+  const files = [...(cadInput.files || [])];
   cadInput.value = '';
-  if (!file || !scene) return;
+  if (!files.length || !scene) return;
   try {
-    await importCadFile(file);
+    await importCadFiles(files);
   } catch (error) {
     console.error(error);
     toast(error.message || 'Import failed');
@@ -494,10 +578,10 @@ addEventListener('drop', async (event) => {
   event.preventDefault();
   dragDepth = 0;
   document.body.classList.remove('dragging');
-  const file = event.dataTransfer.files?.[0];
-  if (!file || !scene) return;
+  const files = [...(event.dataTransfer.files || [])];
+  if (!files.length || !scene) return;
   try {
-    await importCadFile(file);
+    await importCadFiles(files);
   } catch (error) {
     console.error(error);
     toast(error.message || 'Import failed');
@@ -506,14 +590,11 @@ addEventListener('drop', async (event) => {
 
 if (bAddPart) bAddPart.onclick = () => partInput.click();
 partInput.onchange = async () => {
-  const file = partInput.files?.[0];
+  const files = [...(partInput.files || [])];
   partInput.value = '';
-  if (!file || !scene || scene.models.length === 0) return;
+  if (!files.length || !scene || scene.models.length === 0) return;
   try {
-    toast('Adding part...');
-    const { part, cloud } = await addPartFromFile(file, scene.getPack(), { align: true });
-    if (scene.appendPart) scene.appendPart(part, cloud);
-    toast('Part added');
+    await appendCadFiles(files);
   } catch (e) { console.error(e); toast('Add part failed'); }
 };
 
