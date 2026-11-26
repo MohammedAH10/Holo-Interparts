@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { flattenAssembly, prettyName } from './assembly.js';
-import { sampleMesh, meshArea, groupBounds, centroid, recenterChunks } from './sampler.ext.js';
+import { sampleMesh, meshArea, groupBounds, recenterChunks } from './sampler.ext.js';
 
 const HOLO_COLOR = '#4fe3e0';
 
@@ -41,8 +41,6 @@ export function buildImportedModel(root, options = {}) {
   const cloud = recenterChunks(chunks, center.x, center.y, center.z);
   if (!cloud.length) throw new Error('No points could be sampled from this file');
 
-  const cloudCentroid = centroid(cloud);
-  const direction = explodeDirection(cloudCentroid, options.radius || size.length() || 1);
   const baseName = options.fileName ? options.fileName.replace(/\.[^.]+$/, '') : 'Imported model';
   const displayName = options.name || prettyName(baseName);
   const subtitle = options.subtitle || (options.backendId
@@ -51,17 +49,17 @@ export function buildImportedModel(root, options = {}) {
 
   const instances = [{
     cloud: { p: cloud, n: cloud.length / 3 },
-    dir: direction,
     anchor: [0, 0, 0],
   }];
+  const surfaceGeometry = extractSurfaceGeometry(root, center);
   const packed = [{
     name: displayName,
     desc: options.description || 'Imported CAD design',
     color: options.color || HOLO_COLOR,
     instances,
+    surface: surfaceGeometry,
   }];
 
-  const surfaceGeometry = extractSurfaceGeometry(root, center);
   const modelDef = {
     id: options.backendId ? `backend-${options.backendId}` : `imported-${Date.now()}`,
     name: displayName,
@@ -145,16 +143,6 @@ export function extractSurfaceGeometry(root, center) {
   return merged;
 }
 
-function explodeDirection(cloudCentroid, radius) {
-  let dir = [cloudCentroid[0], cloudCentroid[1], cloudCentroid[2]];
-  let length = Math.hypot(dir[0], dir[1], dir[2]);
-  if (length < radius * 0.01) {
-    dir = [0, 1, 0];
-    length = 1;
-  }
-  const scale = (Math.max(radius, 1) * 0.3) / length;
-  return [dir[0] * scale, dir[1] * scale, dir[2] * scale];
-}
 
 function countTriangles(groups) {
   let triangles = 0;

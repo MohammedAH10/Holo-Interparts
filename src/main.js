@@ -7,6 +7,7 @@ import { clamp } from './utils.js';
 import { addPartFromFile } from './editing/addPart.js';
 import { loadModelFile } from './import/loaders.js';
 import { buildImportedModel } from './import/modelFactory.js';
+import { buildAssemblyModel } from './import/assemblyModel.js';
 import {
   ApiError,
   BackendUnavailableError,
@@ -50,7 +51,7 @@ function toast(msg) {
 const ui = { skeleton: true, labels: true, feed: false, controlsHidden: false };
 let trackingState = 'Off';
 let holoOn = true;
-try { holoOn = localStorage.getItem('holo.surface') !== 'off'; } catch { /* private mode */ }
+try { holoOn = localStorage.getItem('holo.solid') !== 'off'; } catch { /* private mode */ }
 let scene;
 const backendState = { online: false, checked: false, info: null, models: [], loaded: new Map() };
 
@@ -316,8 +317,8 @@ scene.onModel = (i, def, g) => {
   markSavedActive();
   const holoButton = $('t-holo');
   if (holoButton) {
-    holoButton.disabled = !def.surface;
-    holoButton.classList.toggle('on', holoOn && !!def.surface);
+    holoButton.disabled = !scene.hasSurface;
+    holoButton.classList.toggle('on', holoOn && scene.hasSurface);
   }
   toast(def.name || 'Model');
 };
@@ -331,28 +332,45 @@ function showPart(i) {
   const pcName = $('pc-name');
   const pcDesc = $('pc-desc');
   const pcDot = $('pc-dot');
-  if (pcName) pcName.textContent = p ? p.name : 'No part selected';
-  if (pcDesc) pcDesc.textContent = p ? p.desc : 'Point at a part, or click one, to read what it does.';
+  if (pcName) {
+    pcName.disabled = !p;
+    pcName.value = p ? p.name : '';
+    pcName.placeholder = p ? 'Part title' : 'No part selected';
+  }
+  const linked = p && scene.partGroupSize ? scene.partGroupSize(i) - 1 : 0;
+  if (pcDesc) {
+    pcDesc.textContent = p
+      ? `${p.desc}${linked > 0 ? ` · linked to ${linked} part${linked === 1 ? '' : 's'}` : ' · independent part'}`
+      : 'Point at a part, or click one, to read what it does.';
+  }
+  const detach = $('b-detach');
+  if (detach) detach.disabled = !(p && linked > 0);
   if (pcDot) pcDot.style.background = p ? p.color : '#555a70';
 }
 
-const rExplode = $('r-explode');
-const rInt = $('r-int');
-let draggingExplode = false;
-if (rExplode) rExplode.addEventListener('pointerdown', () => (draggingExplode = true));
-addEventListener('pointerup', () => (draggingExplode = false));
-if (rExplode) rExplode.addEventListener('input', () => { if (scene) scene.explodeTarget = rExplode.value / 100; });
-if (rInt) rInt.addEventListener('input', () => {
-  if (scene) scene.intensity = rInt.value / 100;
-  const vInt = $('v-int');
-  if (vInt) vInt.textContent = rInt.value + '%';
-});
+const bDetach = $('b-detach');
+if (bDetach) bDetach.onclick = () => {
+  const i = scene?.sel ?? -1;
+  if (i < 0 || !scene.detachPart(i)) return;
+  toast(`${scene.parts[i].name} is independent again`);
+  showPart(i);
+};
 
-const bExplode = $('b-explode');
+const pcNameInput = $('pc-name');
+if (pcNameInput) {
+  pcNameInput.addEventListener('input', () => {
+    const i = scene?.sel;
+    if (i !== undefined && i >= 0) scene.setPartName(i, pcNameInput.value);
+  });
+  pcNameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === 'Escape') pcNameInput.blur();
+    event.stopPropagation();
+  });
+}
+
 const bSpin = $('b-spin');
 const bReset = $('b-reset');
 const bNext = $('b-next');
-if (bExplode) bExplode.onclick = () => { if (scene) scene.explodeTarget = scene.explodeTarget > 0.5 ? 0 : 1; };
 if (bSpin) bSpin.onclick = () => {
   if (scene) {
     scene.autoSpin = !scene.autoSpin;
@@ -367,8 +385,9 @@ if (bNext) bNext.onclick = () => { if (scene) scene.next(); };
 
 const bImport = $('b-import');
 const bAddPart = $('b-add');
-const cadInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx' });
-const partInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx' });
+const bUnlock = $('b-unlock');
+const cadInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx', multiple: true });
+const partInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl,.obj,.ply,.gltf,.glb,.fbx', multiple: true });
 
 function formatCount(value) {
   return Number(value || 0).toLocaleString();
@@ -458,13 +477,96 @@ async function importCadFile(file) {
   return importLocalCad(file);
 }
 
+function shiftCloud(cloud, x, y, z) {
+  if (!cloud?.length) return cloud;
+  const out = new Float32Array(cloud.length);
+  for (let i = 0; i < cloud.length; i += 3) {
+    out[i] = cloud[i] + x;
+    out[i + 1] = cloud[i + 1] + y;
+    out[i + 2] = cloud[i + 2] + z;
+  }
+  return out;
+}
+
+async function importFilesAsAssembly(files) {
+  const entries = [];
+  for (let i = 0; i < files.length; i++) {
+    toast(`Importing part ${i + 1}/${files.length}…`);
+    try {
+      const entry = await addPartFromFile(files[i], null, { align: false });
+      entries.push(entry);
+    } catch (error) {
+      console.warn(`Could not import ${files[i].name}`, error);
+    }
+  }
+  if (!entries.length) throw new Error('None of those files could be imported');
+
+  const maxRadius = Math.max(...entries.map((entry) => entry.radius || 1), 1);
+  const cell = maxRadius * 2.25;
+  const cols = Math.ceil(Math.sqrt(entries.length));
+  const rows = Math.ceil(entries.length / cols);
+  let radius = 0;
+
+  const placed = entries.map((entry, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const x = (col - (cols - 1) / 2) * cell;
+    const y = ((rows - 1) / 2 - row) * cell;
+    const cloud = shiftCloud(entry.cloud, x, y, 0);
+    entry.surface?.translate(x, y, 0);
+    const part = {
+      ...entry.part,
+      anchor: [entry.part.anchor[0] + x, entry.part.anchor[1] + y, entry.part.anchor[2]],
+      surface: entry.surface,
+    };
+    radius = Math.max(radius, Math.hypot(x, y, 0) + (entry.radius || 1));
+    return { ...entry, part, cloud };
+  });
+
+  const { modelDef } = buildAssemblyModel(placed, {
+    name: `Assembly · ${placed.length} parts`,
+    radius,
+  });
+  const idx = registerModel(modelDef);
+  scene.setModel(idx);
+  toast(`${placed.length} parts imported — pinch one and lock it to another`);
+  return idx;
+}
+
+async function importCadFiles(files) {
+  const list = [...(files || [])];
+  if (!list.length) return null;
+  if (list.length === 1) return importCadFile(list[0]);
+  return importFilesAsAssembly(list);
+}
+
+async function appendCadFiles(files) {
+  if (!scene || scene.models.length === 0) return 0;
+  const pack = scene.getPack();
+  const items = [];
+  for (let i = 0; i < files.length; i++) {
+    toast(`Adding part ${i + 1}/${files.length}…`);
+    try {
+      const { part, cloud, surface } = await addPartFromFile(files[i], pack, { align: true });
+      part.surface = surface;
+      items.push({ part, cloud, surface });
+    } catch (error) {
+      console.warn(`Could not add ${files[i].name}`, error);
+    }
+  }
+  const added = scene.appendParts ? scene.appendParts(items) : 0;
+  if (added) toast(added === 1 ? 'Part added' : `${added} parts added`);
+  else toast('No parts added');
+  return added;
+}
+
 if (bImport) bImport.onclick = () => cadInput.click();
 cadInput.onchange = async () => {
-  const file = cadInput.files?.[0];
+  const files = [...(cadInput.files || [])];
   cadInput.value = '';
-  if (!file || !scene) return;
+  if (!files.length || !scene) return;
   try {
-    await importCadFile(file);
+    await importCadFiles(files);
   } catch (error) {
     console.error(error);
     toast(error.message || 'Import failed');
@@ -494,26 +596,28 @@ addEventListener('drop', async (event) => {
   event.preventDefault();
   dragDepth = 0;
   document.body.classList.remove('dragging');
-  const file = event.dataTransfer.files?.[0];
-  if (!file || !scene) return;
+  const files = [...(event.dataTransfer.files || [])];
+  if (!files.length || !scene) return;
   try {
-    await importCadFile(file);
+    await importCadFiles(files);
   } catch (error) {
     console.error(error);
     toast(error.message || 'Import failed');
   }
 });
 
+if (bUnlock) bUnlock.onclick = () => {
+  if (!scene) return;
+  scene.unlockAll();
+  toast('Parts unlinked');
+};
 if (bAddPart) bAddPart.onclick = () => partInput.click();
 partInput.onchange = async () => {
-  const file = partInput.files?.[0];
+  const files = [...(partInput.files || [])];
   partInput.value = '';
-  if (!file || !scene || scene.models.length === 0) return;
+  if (!files.length || !scene || scene.models.length === 0) return;
   try {
-    toast('Adding part...');
-    const { part, cloud } = await addPartFromFile(file, scene.getPack(), { align: true });
-    if (scene.appendPart) scene.appendPart(part, cloud);
-    toast('Part added');
+    await appendCadFiles(files);
   } catch (e) { console.error(e); toast('Add part failed'); }
 };
 
@@ -536,8 +640,8 @@ if (tHolo) {
     holoOn = !holoOn;
     scene.setHologramEnabled(holoOn);
     tHolo.classList.toggle('on', holoOn && !!scene.hasSurface);
-    try { localStorage.setItem('holo.surface', holoOn ? 'on' : 'off'); } catch { /* private mode */ }
-    toast(holoOn ? 'Hologram surface on' : 'Hologram surface off');
+    try { localStorage.setItem('holo.solid', holoOn ? 'on' : 'off'); } catch { /* private mode */ }
+    toast(holoOn ? 'Glass surface on' : 'Point cloud on');
   };
 }
 const tFull = $('t-full');
@@ -699,6 +803,9 @@ let grab = null;
 let lastHover = { i: -1, t: 0 };
 let dwell = { i: -1, t: 0 };
 let peaceCool = 0;
+let lockCool = 0;
+let detachCool = 0;
+let lastTouched = { i: -1, t: 0 };
 const prevPalm = new Map();
 let activeKey = '';
 
@@ -709,7 +816,7 @@ function setActive(key) {
 }
 
 function endGrab() {
-  if (grab) scene.releaseAll();
+  if (grab) lastTouched = { i: grab.part, t: performance.now() / 1000 };
   grab = null;
 }
 
@@ -748,8 +855,30 @@ function control(t, dt) {
   const g = h.gesture;
   const palmPx = { x: h.palm.x * W, y: h.palm.y * H };
 
+  let action = '';
+  const recent = t - lastTouched.t < 2.5 ? lastTouched.i : -1;
+  const target = recent >= 0 ? recent : (scene.sel >= 0 ? scene.sel : scene.hover);
+  if (g === 'ROCK' && t > lockCool) {
+    const near = target >= 0 ? scene.lockNearest(target) : -1;
+    if (near >= 0 && scene.lockParts(target, near)) {
+      lockCool = t + 1.2;
+      scene.setHover(near);
+      scene.setSel(target);
+      showPart(target);
+      toast(`Locked ${scene.parts[target].name} to ${scene.parts[near].name}`);
+      action = 'ROCK';
+    }
+  } else if (g === 'FIST' && t > detachCool && target >= 0) {
+    if (scene.detachPart(target)) {
+      detachCool = t + 0.9;
+      scene.setSel(target);
+      showPart(target);
+      toast(`${scene.parts[target].name} is independent again`);
+      action = 'FIST';
+    }
+  }
+
   if (g === 'OPEN' || g === 'FIST' || g === 'NONE') {
-    scene.explodeTarget = g === 'FIST' ? 0 : clamp((h.openness - 0.12) / 0.78, 0, 1);
     const prev = prevPalm.get(h.id);
     if (prev) {
       const dx = palmPx.x - prev.x, dy = palmPx.y - prev.y;
@@ -757,14 +886,14 @@ function control(t, dt) {
     }
     if (h.rollDelta) scene.rollBy(h.rollDelta * 0.7);
     scene.setHover(-1);
-    setActive(g === 'NONE' ? 'MOVE' : g);
-    if (g === 'OPEN' && prev && Math.hypot(palmPx.x - prev.x, palmPx.y - prev.y) > 6) setActive('MOVE');
+    setActive(action || 'MOVE');
   } else {
     if (g === 'POINT') {
       const idx = scene.pick(h.tip.x * W, h.tip.y * H, 95);
       scene.setHover(idx);
       if (idx >= 0) {
         lastHover = { i: idx, t };
+        lastTouched = { i: idx, t };
         showPart(idx);
       }
       if (idx >= 0 && idx === dwell.i) {
@@ -784,6 +913,7 @@ function control(t, dt) {
         }
       } else {
         scene.dragPart(grab.part, pp.x - grab.last.x, pp.y - grab.last.y);
+        if (h.rollDelta) scene.rotatePart(grab.part, h.rollDelta * 1.4);
         grab.last = pp;
       }
     } else if (g === 'PEACE') {
@@ -822,6 +952,7 @@ addEventListener('pointerup', (e) => {
   if (Math.hypot(e.clientX - mouseStart.x, e.clientY - mouseStart.y) < 5) {
     const idx = scene.pick(e.clientX, e.clientY, 80);
     scene.setSel(idx === scene.sel ? -1 : idx);
+    if (idx >= 0) lastTouched = { i: idx, t: performance.now() / 1000 };
     showPart(scene.sel);
   }
 });
@@ -832,12 +963,16 @@ addEventListener('wheel', (e) => {
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   if (!scene) return;
-  if (e.key === ' ') {
-    e.preventDefault();
-    scene.explodeTarget = scene.explodeTarget > 0.5 ? 0 : 1;
-  } else if (e.key === 'ArrowRight') scene.next(1);
+  if (e.key === 'ArrowRight') scene.next(1);
   else if (e.key === 'ArrowLeft') scene.next(-1);
   else if (e.key.toLowerCase() === 'r') scene.resetView();
+  else if (e.key.toLowerCase() === 'u') { scene.unlockAll(); toast('Parts unlinked'); }
+  else if (e.key.toLowerCase() === 'd' && scene.sel >= 0) {
+    if (scene.detachPart(scene.sel)) {
+      toast(`${scene.parts[scene.sel].name} detached`);
+      showPart(scene.sel);
+    }
+  }
   else if (e.key.toLowerCase() === 'h') setControlsHidden(!ui.controlsHidden);
   else if (e.key >= '1' && e.key <= String(MODELS.length)) scene.setModel(+e.key - 1);
 });
@@ -903,15 +1038,6 @@ function drawRing(h) {
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-    const e = clamp(scene.explode, 0, 1);
-    if (e > 0.01) {
-      ctx.shadowColor = 'rgba(255,255,255,0.9)';
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 4.5;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * e);
-      ctx.stroke();
-    }
   }
   ctx.restore();
 }
@@ -938,8 +1064,8 @@ function drawZoom(a, b) {
 }
 
 function drawLabels() {
-  const e = clamp((scene.shownExplode - 0.1) / 0.3, 0, 1);
-  if (e <= 0.01 || scene.uniforms.uScatter.value > 0.3) return;
+  if (scene.uniforms.uScatter.value > 0.3) return;
+  const e = 1;
   const pts = scene.labelPoints();
   const c = scene.centerScreen();
   const panelR = W > 900 && !ui.controlsHidden ? 310 : 0;
@@ -984,11 +1110,36 @@ function drawLabels() {
   ctx.restore();
 }
 
+function drawLinks() {
+  const links = scene.lockSegments ? scene.lockSegments() : [];
+  if (!links.length) return;
+  ctx.save();
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([5, 5]);
+  ctx.shadowBlur = 10;
+  for (const link of links) {
+    ctx.strokeStyle = link.color;
+    ctx.shadowColor = link.color;
+    ctx.beginPath();
+    ctx.moveTo(link.a.x, link.a.y);
+    ctx.lineTo(link.b.x, link.b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = link.color;
+    ctx.beginPath();
+    ctx.arc(link.b.x, link.b.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.setLineDash([5, 5]);
+  }
+  ctx.restore();
+}
+
 function drawOverlay() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
   const tLabels = $('t-labels');
   const tSkel = $('t-skel');
+  drawLinks();
   if (tLabels ? ui.labels : ui.labels) drawLabels();
   const live = perc.hands.filter((h) => !h.held);
   if (ui.skeleton) for (const h of live) drawHand(h);
@@ -1008,13 +1159,6 @@ function frame(now) {
     perc = engine.update(hands, t, mapPoint, (video.videoWidth || 16) / (video.videoHeight || 9));
   }
   control(t, dt);
-  if (!draggingExplode && rExplode) {
-    rExplode.value = Math.round(clamp(scene.explode, 0, 1) * 100);
-    const vExp = $('v-explode');
-    if (vExp) vExp.textContent = Math.round(clamp(scene.explode, 0, 1) * 100) + '%';
-  }
-  const bExp = $('b-explode');
-  if (bExp) bExp.textContent = scene.explodeTarget > 0.5 ? 'Assemble' : 'Explode';
   scene.update(dt, t);
   drawOverlay();
   requestAnimationFrame(frame);

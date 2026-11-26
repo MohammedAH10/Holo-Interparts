@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './utils.js';
-import { HologramLayer } from './scene/hologram.js';
+import { SolidPartLayer } from './scene/solidParts.js';
+import { normalizePartGroups, groupMembers, mergePartGroups, resetPartGroups, detachPart as detachPartGroup } from './assembly/groups.js';
 
 const MAXP = 24; // max parts per model (must match the shader array size)
 const CAM_Z = 9.5;
@@ -8,12 +9,10 @@ const FOV = 38;
 const FIT = 2.7;
 
 const VERT = /* glsl */ `
-attribute vec3 aDir;
 attribute vec3 aColor;
 attribute float aPart;
 attribute vec3 aRand;
 attribute float aSeed;
-uniform float uExplode;
 uniform float uTime;
 uniform float uSize;
 uniform float uPR;
@@ -25,7 +24,7 @@ varying vec3 vColor;
 varying float vA;
 void main() {
   int idx = int(aPart + 0.5);
-  vec3 p = position + aDir * uExplode + uOff[idx];
+  vec3 p = position + uOff[idx];
   p += 0.010 * vec3(sin(uTime * 1.3 + aSeed * 40.0), cos(uTime * 1.1 + aSeed * 31.0), sin(uTime * 0.9 + aSeed * 23.0));
   p += aRand * uScatter * 4.0;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -65,10 +64,19 @@ export class HoloScene {
     this.scene = new THREE.Scene();
     this.group = new THREE.Group();
     this.scene.add(this.group);
-    this.hologram = new HologramLayer(this.group);
+    this.solidParts = new SolidPartLayer(this.group);
+    this.surfaceEnabled = true;
+    this.solidAll = false;
+
+    this.scene.add(new THREE.AmbientLight(0x8899ff, 0.8));
+    const keyLight = new THREE.DirectionalLight(0x9fe8ff, 2.1);
+    keyLight.position.set(6, 8, 10);
+    this.scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0xffb05a, 0.9);
+    fillLight.position.set(-8, -4, -6);
+    this.scene.add(fillLight);
 
     this.uniforms = {
-      uExplode: { value: 0 },
       uTime: { value: 0 },
       uSize: { value: 2.7 },
       uPR: { value: 1 },
@@ -87,9 +95,6 @@ export class HoloScene {
       blending: THREE.AdditiveBlending,
     });
 
-    this.explode = 0;
-    this.explodeTarget = 0.85;
-    this.intensity = 1;
     this.rot = { x: 0, y: 0, z: 0 };
     this.vel = { x: 0, y: 0 };
     this.scale = 1;
@@ -104,7 +109,10 @@ export class HoloScene {
     this.sel = -1;
     this.shift = 0;
     this.offT = Array.from({ length: MAXP }, () => new THREE.Vector3());
+    this.partRot = Array.from({ length: MAXP }, () => new THREE.Quaternion());
     this.cache = new Map();
+    this.partGroups = [];
+    this.modelRadius = 1;
     this.onModel = null;
     this.currentPack = null;
     this.panelVisible = true;
@@ -119,10 +127,6 @@ export class HoloScene {
   get partCount() {
     return this.parts ? this.parts.length : 0;
   }
-  get shownExplode() {
-    return this.explode * this.intensity;
-  }
-
   resize() {
     const W = innerWidth, H = innerHeight;
     this.W = W;
@@ -150,25 +154,39 @@ export class HoloScene {
   }
 
   appendPart(partData, cloud) {
-    if (!partData) return;
+    return this.appendParts([{ part: partData, cloud }]);
+  }
+
+  appendParts(items) {
     const def = this.models[this.index];
-    if (!def) return;
-    if ((this.parts?.length || 0) >= MAXP) return;
-    const instances = [];
-    if (cloud && (cloud.length || cloud.p?.length)) {
-      instances.push({ cloud, dir: partData.dir || [0, 0, 0], anchor: partData.anchor || [0, 0, 0] });
-    }
+    if (!def || !Array.isArray(items) || items.length === 0) return 0;
+    const room = MAXP - (this.parts?.length || 0);
+    if (room <= 0) return 0;
     if (!def.extraParts) def.extraParts = [];
-    def.extraParts.push({
-      name: partData.name || 'Part',
-      desc: partData.desc || '',
-      color: partData.color || '#ffaa44',
-      instances,
-    });
+    let added = 0;
+    for (const item of items.slice(0, room)) {
+      const partData = item?.part;
+      const cloud = item?.cloud;
+      if (!partData) continue;
+      const instances = [];
+      if (cloud && (cloud.length || cloud.p?.length)) {
+        instances.push({ cloud, anchor: partData.anchor || [0, 0, 0] });
+      }
+      def.extraParts.push({
+        name: partData.name || 'Part',
+        desc: partData.desc || '',
+        color: partData.color || '#ffaa44',
+        instances,
+        surface: partData.surface || item.surface || null,
+      });
+      added++;
+    }
+    if (!added) return 0;
+    def.partGroups = normalizePartGroups(def.partGroups, (this.parts?.length || 0) + added);
     this.cache.delete(this.index);
-    this.releaseAll(true);
     this.pending = this.index;
     this.scatterTarget = 1;
+    return added;
   }
 
   _geometry(i) {
@@ -184,7 +202,6 @@ export class HoloScene {
     }
 
     const mn = [1e9,1e9,1e9], mx = [-1e9,-1e9,-1e9];
-    const mn2 = [1e9,1e9,1e9], mx2 = [-1e9,-1e9,-1e9];
     for (const p of parts) {
       for (const inst of p.instances || []) {
         const q = inst.cloud?.p || inst.cloud;
@@ -193,19 +210,15 @@ export class HoloScene {
         for (let k = 0; k < len; k += 3) {
           for (let a = 0; a < 3; a++) {
             const v = q[k + a];
-            const w = v + (inst.dir?.[a] || 0);
             if (v < mn[a]) mn[a] = v;
             if (v > mx[a]) mx[a] = v;
-            if (w < mn2[a]) mn2[a] = w;
-            if (w > mx2[a]) mx2[a] = w;
           }
         }
       }
     }
-    const c = [0,1,2].map(a => (mn[a]+mx[a]+mn2[a]+mx2[a])/4);
+    const c = [0,1,2].map(a => (mn[a]+mx[a])/2);
 
     const pos = new Float32Array(total * 3);
-    const dir = new Float32Array(total * 3);
     const col = new Float32Array(total * 3);
     const part = new Float32Array(total);
     const rnd = new Float32Array(total * 3);
@@ -219,14 +232,13 @@ export class HoloScene {
       const samples = [];
       (p.instances || []).forEach(inst => {
         const a = inst.anchor || [0, 0, 0];
-        anchors.push({ a: [a[0] - c[0], a[1] - c[1], a[2] - c[2]], d: inst.dir || [0,0,0] });
+        anchors.push({ a: [a[0] - c[0], a[1] - c[1], a[2] - c[2]] });
         const q = inst.cloud?.p || inst.cloud;
         if (!q) return;
         const n = inst.cloud?.n || (q.length / 3);
         for (let i = 0; i < n; i++, k++) {
           const x = q[i*3] - c[0], y = q[i*3+1] - c[1], z = q[i*3+2] - c[2];
           pos.set([x,y,z], k*3);
-          dir.set(inst.dir || [0,0,0], k*3);
           const br = 0.78 + 0.32 * Math.random();
           col.set([rgb[0]*br, rgb[1]*br, rgb[2]*br], k*3);
           part[k] = pi;
@@ -234,43 +246,91 @@ export class HoloScene {
           const s = Math.sqrt(1-uu*uu);
           rnd.set([s*Math.cos(tt)*rr, uu*rr, s*Math.sin(tt)*rr], k*3);
           seed[k] = Math.random();
-          maxR = Math.max(maxR, Math.hypot(x+(inst.dir?.[0]||0), y+(inst.dir?.[1]||0), z+(inst.dir?.[2]||0)));
-          if (Math.random() < 160 / Math.max(160, n)) samples.push(x,y,z,(inst.dir?.[0]||0),(inst.dir?.[1]||0),(inst.dir?.[2]||0));
+          maxR = Math.max(maxR, Math.hypot(x, y, z));
+          if (Math.random() < 160 / Math.max(160, n)) samples.push(x, y, z);
         }
       });
-      meta.push({ name: p.name, desc: p.desc || '', color: p.color || '#7fa3ff', anchors, samples: new Float32Array(samples) });
+      let cx = 0, cy = 0, cz = 0, sn = 0;
+      for (let si = 0; si < samples.length; si += 3) {
+        cx += samples[si]; cy += samples[si + 1]; cz += samples[si + 2];
+        sn++;
+      }
+      const inv = sn ? 1 / sn : 0;
+      meta.push({
+        name: p.name,
+        desc: p.desc || '',
+        color: p.color || '#7fa3ff',
+        anchors,
+        samples: new Float32Array(samples),
+        center: [cx * inv, cy * inv, cz * inv],
+        surface: p.surface || null,
+      });
     });
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('aDir', new THREE.BufferAttribute(dir, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('aPart', new THREE.BufferAttribute(part, 1));
     geo.setAttribute('aRand', new THREE.BufferAttribute(rnd, 3));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 50);
-    const entry = { geo, meta, fit: FIT / Math.max(0.5, maxR), count: total };
+    const entry = { geo, meta, fit: FIT / Math.max(0.5, maxR), count: total, radius: Math.max(0.5, maxR), sources: parts, center: c };
     this.cache.set(i, entry);
     return entry;
   }
 
+  _saveTransforms(def) {
+    if (!def || !this.parts?.length) return;
+    def.partTransforms = this.parts.map((_, i) => {
+      const offset = this.uniforms.uOff.value[i];
+      const rotation = this.partRot[i];
+      return {
+        offset: [offset.x, offset.y, offset.z],
+        rot: rotation ? [rotation.x, rotation.y, rotation.z, rotation.w] : [0, 0, 0, 1],
+      };
+    });
+  }
+
+  _restoreTransforms(def) {
+    const list = def?.partTransforms;
+    if (!Array.isArray(list)) return;
+    for (let i = 0; i < list.length && i < this.offT.length; i++) {
+      const transform = list[i];
+      if (!transform) continue;
+      const offset = transform.offset || [0, 0, 0];
+      this.offT[i].set(offset[0] || 0, offset[1] || 0, offset[2] || 0);
+      this.uniforms.uOff.value[i].set(offset[0] || 0, offset[1] || 0, offset[2] || 0);
+      const rot = transform.rot;
+      if (Array.isArray(rot) && rot.length === 4) this.partRot[i].set(rot[0], rot[1], rot[2], rot[3]);
+    }
+  }
+
   _load(i) {
     if (!this.models[i]) return;
+    if (this.index >= 0) this._saveTransforms(this.models[this.index]);
     const g = this._geometry(i);
     if (this.points) this.group.remove(this.points);
     this.points = new THREE.Points(g.geo, this.material);
     this.points.frustumCulled = false;
     this.group.add(this.points);
-    this.hologram.setSurface(this.models[i]?.surface || null);
     this.parts = g.meta;
+    this.partSources = g.sources || [];
+    this.partRot.forEach((q) => q.identity());
+    this.solidParts.setParts(this.parts, g.center);
+    this.solidAll = this.parts.length > 0 && this.solidParts.count === this.parts.length;
+    this.points.visible = !this.solidAll || !this.surfaceEnabled;
     this.fit = g.fit;
     this.count = g.count;
+    this.modelRadius = g.radius || 1;
+    this.partGroups = normalizePartGroups(this.models[i]?.partGroups, g.meta.length);
+    this.models[i].partGroups = this.partGroups.slice();
     this.index = i;
     this.hover = -1;
     this.sel = -1;
     this.uniforms.uHi.value = -1;
     this.uniforms.uSel.value = -1;
     this.releaseAll(true);
+    this._restoreTransforms(this.models[i]);
     const def = this.models[i];
     const v = def.view || { x: 0, y: 0, z: 0 };
     this.rot.x = v.x; this.rot.y = v.y; this.rot.z = v.z;
@@ -291,13 +351,32 @@ export class HoloScene {
   next(d = 1) { this.setModel((this.pending >= 0 ? this.pending : this.index) + d); }
 
   setHologramEnabled(enabled) {
-    this.hologram.setEnabled(enabled);
+    this.surfaceEnabled = enabled !== false;
+    this.solidParts.setEnabled(this.surfaceEnabled);
+    if (this.points) this.points.visible = !this.solidAll || !this.surfaceEnabled;
   }
   get hasSurface() {
-    return !!this.hologram.mesh;
+    return this.solidParts.count > 0;
   }
   setHover(i) { this.hover = i; this.uniforms.uHi.value = i; }
   setSel(i) { this.sel = i; this.uniforms.uSel.value = i; }
+  setPartName(i, value) {
+    if (!this.parts?.[i]) return false;
+    const name = String(value || '').trim().slice(0, 60);
+    if (!name) return false;
+    this.parts[i].name = name;
+    const source = this.partSources?.[i];
+    if (source) source.name = name;
+    return true;
+  }
+  setPartDesc(i, value) {
+    if (!this.parts?.[i]) return false;
+    const desc = String(value || '').trim().slice(0, 240);
+    this.parts[i].desc = desc;
+    const source = this.partSources?.[i];
+    if (source) source.desc = desc;
+    return true;
+  }
   rotateBy(dyaw, dpitch, dt = 1/60) {
     this.rot.y += dyaw;
     this.rot.x = clamp(this.rot.x + dpitch, -1.4, 1.4);
@@ -313,15 +392,118 @@ export class HoloScene {
     this.rot.x = v.x; this.rot.y = v.y; this.rot.z = v.z;
     this.vel.x = this.vel.y = 0;
     this.scaleTarget = 1;
-    this.releaseAll();
     this.setSel(-1);
   }
+  rotatePart(i, angle) {
+    if (!this.parts?.[i] || !Number.isFinite(angle) || Math.abs(angle) < 1e-5) return;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
+    const members = groupMembers(this.partGroups, i);
+    if (members.length <= 1) {
+      this.partRot[i].premultiply(q);
+      this.idle = 0;
+      return;
+    }
+    const center = [0, 0, 0];
+    for (const part of members) {
+      const c = this.partCenter(part);
+      center[0] += c[0]; center[1] += c[1]; center[2] += c[2];
+    }
+    center[0] /= members.length; center[1] /= members.length; center[2] /= members.length;
+    const v = new THREE.Vector3();
+    for (const part of members) {
+      const c = this.partCenter(part);
+      v.set(c[0] - center[0], c[1] - center[1], c[2] - center[2]).applyQuaternion(q);
+      const base = this.parts[part].center || [0, 0, 0];
+      this.offT[part].set(center[0] + v.x - base[0], center[1] + v.y - base[1], center[2] + v.z - base[2]);
+      this.partRot[part].premultiply(q);
+    }
+    this.idle = 0;
+  }
+
   dragPart(i, dx, dy) {
     if (i < 0 || i >= (this.parts?.length || 0)) return;
     const v = new THREE.Vector3(dx * this.unitsPerPx, -dy * this.unitsPerPx, 0);
     v.applyQuaternion(this.group.quaternion.clone().invert()).divideScalar(Math.max(1e-4, this.group.scale.x));
-    this.offT[i].add(v);
+    const members = groupMembers(this.partGroups, i);
+    const targets = members.length ? members : [i];
+    for (const part of targets) this.offT[part].add(v);
     this.idle = 0;
+  }
+
+  partGroupSize(i) {
+    return groupMembers(this.partGroups, i).length;
+  }
+
+  partCenter(i) {
+    const part = this.parts?.[i];
+    if (!part) return [0, 0, 0];
+    const off = this.uniforms.uOff.value[i];
+    const c = part.center || [0, 0, 0];
+    return [c[0] + off.x, c[1] + off.y, c[2] + off.z];
+  }
+
+  lockParts(a, b) {
+    if (!this.parts || a === b) return false;
+    if (!mergePartGroups(this.partGroups, a, b)) return false;
+    const def = this.models[this.index];
+    if (def) def.partGroups = this.partGroups.slice();
+    this.idle = 0;
+    return true;
+  }
+
+  lockNearest(i, maxDistance) {
+    if (!this.parts || i < 0 || i >= this.parts.length) return -1;
+    const origin = this.partCenter(i);
+    const group = this.partGroups[i];
+    const limit = maxDistance ?? this.modelRadius * 0.45;
+    let best = -1;
+    let bestDistance = limit;
+    for (let j = 0; j < this.parts.length; j++) {
+      if (j === i || this.partGroups[j] === group) continue;
+      const c = this.partCenter(j);
+      const d = Math.hypot(c[0] - origin[0], c[1] - origin[1], c[2] - origin[2]);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = j;
+      }
+    }
+    return best;
+  }
+
+  detachPart(i) {
+    if (!detachPartGroup(this.partGroups, i)) return false;
+    const def = this.models[this.index];
+    if (def) def.partGroups = this.partGroups.slice();
+    this.idle = 0;
+    return true;
+  }
+
+  unlockAll() {
+    resetPartGroups(this.partGroups);
+    const def = this.models[this.index];
+    if (def) def.partGroups = this.partGroups.slice();
+    this.idle = 0;
+  }
+
+  lockSegments() {
+    if (!this.parts?.length || !this.partGroups?.length) return [];
+    const v = new THREE.Vector3();
+    const out = [];
+    const done = new Set();
+    this.group.updateMatrixWorld(true);
+    for (let i = 0; i < this.parts.length; i++) {
+      if (this.partGroupSize(i) < 2 || done.has(this.partGroups[i])) continue;
+      done.add(this.partGroups[i]);
+      const members = groupMembers(this.partGroups, i);
+      const a = this.partCenter(members[0]);
+      const sa = this._toScreen(a, v);
+      for (let k = 1; k < members.length; k++) {
+        const b = this.partCenter(members[k]);
+        const sb = this._toScreen(b, v);
+        out.push({ a: sa, b: sb, color: this.parts[members[k]]?.color || '#4fe3e0' });
+      }
+    }
+    return out;
   }
   releaseAll(snap = false) {
     for (let i = 0; i < MAXP; i++) {
@@ -336,31 +518,38 @@ export class HoloScene {
   }
 
   pick(px, py, maxDist = 100) {
-    const e = this.shownExplode;
     const v = new THREE.Vector3();
+    const r = new THREE.Vector3();
     let best = -1, bd = maxDist;
     this.group.updateMatrixWorld(true);
     this.parts?.forEach((p, i) => {
       const s = p.samples;
       const off = this.uniforms.uOff.value[i];
-      for (let k = 0; k < s.length; k += 6) {
-        const sp = this._toScreen([s[k]+s[k+3]*e+off.x, s[k+1]+s[k+4]*e+off.y, s[k+2]+s[k+5]*e+off.z], v);
-        const d = Math.hypot(sp.x-px, sp.y-py);
-        if (d < bd) { bd = d; best = i; }
+      const q = this.partRot[i];
+      const c = p.center || [0, 0, 0];
+      for (let k = 0; k < s.length; k += 3) {
+        if (q.w < 0.99999) {
+          r.set(s[k] - c[0], s[k+1] - c[1], s[k+2] - c[2]).applyQuaternion(q);
+          const sp = this._toScreen([c[0]+r.x+off.x, c[1]+r.y+off.y, c[2]+r.z+off.z], v);
+          const d = Math.hypot(sp.x-px, sp.y-py);
+          if (d < bd) { bd = d; best = i; }
+        } else {
+          const sp = this._toScreen([s[k]+off.x, s[k+1]+off.y, s[k+2]+off.z], v);
+          const d = Math.hypot(sp.x-px, sp.y-py);
+          if (d < bd) { bd = d; best = i; }
+        }
       }
     });
     return best;
   }
 
   labelPoints() {
-    const e = this.shownExplode;
     const v = new THREE.Vector3();
     this.group.updateMatrixWorld(true);
     return (this.parts || []).map((p, i) => {
       const a = p.anchors?.[0]?.a || [0,0,0];
-      const d = p.anchors?.[0]?.d || [0,0,0];
       const off = this.uniforms.uOff.value[i];
-      const s = this._toScreen([a[0]+d[0]*e+off.x, a[1]+d[1]*e+off.y, a[2]+d[2]*e+off.z], v);
+      const s = this._toScreen([a[0]+off.x, a[1]+off.y, a[2]+off.z], v);
       return { i, x: s.x, y: s.y, name: p.name, color: p.color };
     });
   }
@@ -372,7 +561,6 @@ export class HoloScene {
 
   update(dt, t) {
     this.idle += dt;
-    this.explode = damp(this.explode, this.explodeTarget, 5, dt);
     this.scale = damp(this.scale, this.scaleTarget, 6, dt);
     this.uniforms.uScatter.value = damp(this.uniforms.uScatter.value, this.scatterTarget, this.scatterTarget ? 7 : 3.2, dt);
     if (this.pending >= 0 && this.uniforms.uScatter.value > 0.97) {
@@ -394,9 +582,8 @@ export class HoloScene {
       const grabbed = this.offT[i].lengthSq() > 1e-6;
       off[i].lerp(this.offT[i], 1 - Math.exp(-(grabbed ? 16 : 4) * dt));
     }
-    this.uniforms.uExplode.value = this.explode * this.intensity;
     this.uniforms.uTime.value = t;
-    this.hologram.update({ time: t, explode: this.explode, intensity: this.intensity });
+    this.solidParts.update(this.uniforms.uOff.value, this.hover, this.sel, this.partRot);
     this.group.rotation.set(this.rot.x, this.rot.y, this.rot.z, 'YXZ');
     this.group.scale.setScalar(this.fit * this.scale);
     this.group.position.x = this.shift;

@@ -2,17 +2,7 @@ import * as THREE from 'three';
 import { loadModelFile } from '../import/loaders.js';
 import { flattenAssembly, prettyName } from '../import/assembly.js';
 import { sampleMesh, meshArea, groupBounds, centroid, recenterChunks } from '../import/sampler.ext.js';
-
-function deriveExplode(cn, radius = 1) {
-  let dir = [cn[0], cn[1], cn[2]];
-  let len = Math.hypot(dir[0], dir[1], dir[2]);
-  if (len < radius * 0.05) {
-    dir = [0, 1, 0];
-    len = 1;
-  }
-  const scale = (radius * 0.4) / len;
-  return { dir: [dir[0] * scale, dir[1] * scale, dir[2] * scale] };
-}
+import { extractSurfaceGeometry } from '../import/modelFactory.js';
 
 function colorForName(name) {
   let h = 0;
@@ -24,11 +14,13 @@ function colorForName(name) {
 export async function addPartFromFile(file, pack, opts = {}) {
   const pointsPerUnit = opts.pointsPerUnit ?? 0.006;
   const root = await loadModelFile(file);
+  root.updateMatrixWorld?.(true);
   const groups = flattenAssembly(root);
   if (!groups.length) throw new Error('No meshes found in file');
 
   const bounds = groupBounds(groups);
   const fileCenter = bounds.getCenter(new THREE.Vector3());
+  const size = bounds.getSize(new THREE.Vector3());
   const meta = pack?.json || pack || {};
   const origin = meta.origin || [fileCenter.x, fileCenter.y, fileCenter.z];
   const subtract = opts.align !== false ? origin : [fileCenter.x, fileCenter.y, fileCenter.z];
@@ -52,9 +44,9 @@ export async function addPartFromFile(file, pack, opts = {}) {
   }
   const cloud = recenterChunks(chunks, subtract[0], subtract[1], subtract[2]);
   if (!cloud.length) throw new Error('No points sampled');
+  const surface = extractSurfaceGeometry(root, new THREE.Vector3(subtract[0], subtract[1], subtract[2]));
 
   const cn = centroid(cloud);
-  const { dir } = deriveExplode(cn, meta.radius || 2);
   const base = file.name.replace(/\.[^.]+$/, '');
   
   const part = {
@@ -63,8 +55,13 @@ export async function addPartFromFile(file, pack, opts = {}) {
     desc: opts.desc || 'Part imported from CAD file.',
     color: opts.color || colorForName(base),
     anchor: cn,
-    dir,
     count: cloud.length / 3,
   };
-  return { part, cloud };
+  return {
+    part,
+    cloud,
+    surface,
+    fileCenter: [fileCenter.x, fileCenter.y, fileCenter.z],
+    radius: size.length() / 2,
+  };
 }
