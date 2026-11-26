@@ -9,7 +9,7 @@ export function normalizePartGroups(groups, count) {
   if (!Array.isArray(groups)) return out;
   for (let i = 0; i < Math.min(n, groups.length); i++) {
     const value = groups[i];
-    out[i] = Number.isInteger(value) && value >= 0 ? value : i;
+    out[i] = Number.isInteger(value) && value >= 0 && value < n ? value : i;
   }
   return out;
 }
