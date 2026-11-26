@@ -19,17 +19,23 @@ export class SolidPartLayer {
       const part = parts[i];
       if (!part?.surface) continue;
       const color = new THREE.Color(part.color || '#4fe3e0');
-      const material = new THREE.MeshStandardMaterial({
+      const material = new THREE.MeshPhysicalMaterial({
         color,
-        emissive: color.clone().multiplyScalar(0.35),
-        emissiveIntensity: 0.6,
-        metalness: 0.35,
-        roughness: 0.4,
+        emissive: color.clone().multiplyScalar(0.18),
+        emissiveIntensity: 0.55,
+        metalness: 0.08,
+        roughness: 0.24,
+        clearcoat: 0.55,
+        clearcoatRoughness: 0.22,
+        transparent: true,
+        opacity: 0.3,
+        depthWrite: false,
         side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(part.surface, material);
       mesh.name = `solid-${part.name || i}`;
       mesh.frustumCulled = false;
+      mesh.renderOrder = 3;
       mesh.position.set(-this.center[0], -this.center[1], -this.center[2]);
       this.group.add(mesh);
 
@@ -42,16 +48,17 @@ export class SolidPartLayer {
         const edgeMaterial = new THREE.LineBasicMaterial({
           color,
           transparent: true,
-          opacity: 0.42,
+          opacity: 0.62,
           depthWrite: false,
           blending: THREE.AdditiveBlending,
         });
         edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
         edges.frustumCulled = false;
+        edges.renderOrder = 4;
         mesh.add(edges);
       }
 
-      this.entries.push({ index: i, mesh, edges, material, baseEmissive: 0.6 });
+      this.entries.push({ index: i, mesh, edges, material, baseEmissive: 0.55, baseOpacity: 0.3 });
     }
     this.count = this.entries.length;
     this.group.visible = this.enabled && this.count > 0;
@@ -68,8 +75,9 @@ export class SolidPartLayer {
         );
       }
       const hot = entry.index === hover || entry.index === selected;
-      entry.material.emissiveIntensity = hot ? 1.35 : entry.baseEmissive;
-      if (entry.edges) entry.edges.material.opacity = hot ? 0.85 : 0.42;
+      entry.material.emissiveIntensity = hot ? 1.15 : entry.baseEmissive;
+      entry.material.opacity = hot ? 0.58 : entry.baseOpacity;
+      if (entry.edges) entry.edges.material.opacity = hot ? 0.95 : 0.62;
     }
     this.group.visible = this.enabled && this.count > 0;
   }
