@@ -54,14 +54,15 @@ export function buildImportedModel(root, options = {}) {
     dir: direction,
     anchor: [0, 0, 0],
   }];
+  const surfaceGeometry = extractSurfaceGeometry(root, center);
   const packed = [{
     name: displayName,
     desc: options.description || 'Imported CAD design',
     color: options.color || HOLO_COLOR,
     instances,
+    surface: surfaceGeometry,
   }];
 
-  const surfaceGeometry = extractSurfaceGeometry(root, center);
   const modelDef = {
     id: options.backendId ? `backend-${options.backendId}` : `imported-${Date.now()}`,
     name: displayName,
