@@ -641,7 +641,7 @@ if (tHolo) {
     scene.setHologramEnabled(holoOn);
     tHolo.classList.toggle('on', holoOn && !!scene.hasSurface);
     try { localStorage.setItem('holo.solid', holoOn ? 'on' : 'off'); } catch { /* private mode */ }
-    toast(holoOn ? 'Solid surface on' : 'Point cloud on');
+    toast(holoOn ? 'Glass surface on' : 'Point cloud on');
   };
 }
 const tFull = $('t-full');

@@ -184,7 +184,6 @@ export class HoloScene {
     if (!added) return 0;
     def.partGroups = normalizePartGroups(def.partGroups, (this.parts?.length || 0) + added);
     this.cache.delete(this.index);
-    this.releaseAll(true);
     this.pending = this.index;
     this.scatterTarget = 1;
     return added;
@@ -280,8 +279,35 @@ export class HoloScene {
     return entry;
   }
 
+  _saveTransforms(def) {
+    if (!def || !this.parts?.length) return;
+    def.partTransforms = this.parts.map((_, i) => {
+      const offset = this.uniforms.uOff.value[i];
+      const rotation = this.partRot[i];
+      return {
+        offset: [offset.x, offset.y, offset.z],
+        rot: rotation ? [rotation.x, rotation.y, rotation.z, rotation.w] : [0, 0, 0, 1],
+      };
+    });
+  }
+
+  _restoreTransforms(def) {
+    const list = def?.partTransforms;
+    if (!Array.isArray(list)) return;
+    for (let i = 0; i < list.length && i < this.offT.length; i++) {
+      const transform = list[i];
+      if (!transform) continue;
+      const offset = transform.offset || [0, 0, 0];
+      this.offT[i].set(offset[0] || 0, offset[1] || 0, offset[2] || 0);
+      this.uniforms.uOff.value[i].set(offset[0] || 0, offset[1] || 0, offset[2] || 0);
+      const rot = transform.rot;
+      if (Array.isArray(rot) && rot.length === 4) this.partRot[i].set(rot[0], rot[1], rot[2], rot[3]);
+    }
+  }
+
   _load(i) {
     if (!this.models[i]) return;
+    if (this.index >= 0) this._saveTransforms(this.models[this.index]);
     const g = this._geometry(i);
     if (this.points) this.group.remove(this.points);
     this.points = new THREE.Points(g.geo, this.material);
@@ -304,6 +330,7 @@ export class HoloScene {
     this.uniforms.uHi.value = -1;
     this.uniforms.uSel.value = -1;
     this.releaseAll(true);
+    this._restoreTransforms(this.models[i]);
     const def = this.models[i];
     const v = def.view || { x: 0, y: 0, z: 0 };
     this.rot.x = v.x; this.rot.y = v.y; this.rot.z = v.z;
@@ -365,7 +392,6 @@ export class HoloScene {
     this.rot.x = v.x; this.rot.y = v.y; this.rot.z = v.z;
     this.vel.x = this.vel.y = 0;
     this.scaleTarget = 1;
-    this.releaseAll();
     this.setSel(-1);
   }
   rotatePart(i, angle) {
@@ -493,15 +519,25 @@ export class HoloScene {
 
   pick(px, py, maxDist = 100) {
     const v = new THREE.Vector3();
+    const r = new THREE.Vector3();
     let best = -1, bd = maxDist;
     this.group.updateMatrixWorld(true);
     this.parts?.forEach((p, i) => {
       const s = p.samples;
       const off = this.uniforms.uOff.value[i];
+      const q = this.partRot[i];
+      const c = p.center || [0, 0, 0];
       for (let k = 0; k < s.length; k += 3) {
-        const sp = this._toScreen([s[k]+off.x, s[k+1]+off.y, s[k+2]+off.z], v);
-        const d = Math.hypot(sp.x-px, sp.y-py);
-        if (d < bd) { bd = d; best = i; }
+        if (q.w < 0.99999) {
+          r.set(s[k] - c[0], s[k+1] - c[1], s[k+2] - c[2]).applyQuaternion(q);
+          const sp = this._toScreen([c[0]+r.x+off.x, c[1]+r.y+off.y, c[2]+r.z+off.z], v);
+          const d = Math.hypot(sp.x-px, sp.y-py);
+          if (d < bd) { bd = d; best = i; }
+        } else {
+          const sp = this._toScreen([s[k]+off.x, s[k+1]+off.y, s[k+2]+off.z], v);
+          const d = Math.hypot(sp.x-px, sp.y-py);
+          if (d < bd) { bd = d; best = i; }
+        }
       }
     });
     return best;

@@ -49,6 +49,12 @@ test('detaches one part without splitting the rest of its group', () => {
   assert.equal(detachPart(groups, 9), false);
 });
 
+test('keeps newly appended parts independent', () => {
+  const groups = createPartGroups(2);
+  mergePartGroups(groups, 0, 1);
+  assert.deepEqual(normalizePartGroups(groups, 5), [0, 0, 2, 3, 4]);
+});
+
 test('resets groups back to one per part', () => {
   const groups = [0, 1, 2];
   mergePartGroups(groups, 0, 2);
