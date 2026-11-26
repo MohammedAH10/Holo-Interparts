@@ -15,7 +15,6 @@ export function buildAssemblyModel(entries = [], options = {}) {
       surface: entry.surface || entry.part.surface || null,
       instances: cloud?.length ? [{
         cloud: { p: cloud, n: cloud.length / 3 },
-        dir: entry.part.dir || [0, 0, 0],
         anchor: entry.part.anchor || [0, 0, 0],
       }] : [],
     });

@@ -9,12 +9,10 @@ const FOV = 38;
 const FIT = 2.7;
 
 const VERT = /* glsl */ `
-attribute vec3 aDir;
 attribute vec3 aColor;
 attribute float aPart;
 attribute vec3 aRand;
 attribute float aSeed;
-uniform float uExplode;
 uniform float uTime;
 uniform float uSize;
 uniform float uPR;
@@ -26,7 +24,7 @@ varying vec3 vColor;
 varying float vA;
 void main() {
   int idx = int(aPart + 0.5);
-  vec3 p = position + aDir * uExplode + uOff[idx];
+  vec3 p = position + uOff[idx];
   p += 0.010 * vec3(sin(uTime * 1.3 + aSeed * 40.0), cos(uTime * 1.1 + aSeed * 31.0), sin(uTime * 0.9 + aSeed * 23.0));
   p += aRand * uScatter * 4.0;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -79,7 +77,6 @@ export class HoloScene {
     this.scene.add(fillLight);
 
     this.uniforms = {
-      uExplode: { value: 0 },
       uTime: { value: 0 },
       uSize: { value: 2.7 },
       uPR: { value: 1 },
@@ -98,9 +95,6 @@ export class HoloScene {
       blending: THREE.AdditiveBlending,
     });
 
-    this.explode = 0;
-    this.explodeTarget = 0.85;
-    this.intensity = 1;
     this.rot = { x: 0, y: 0, z: 0 };
     this.vel = { x: 0, y: 0 };
     this.scale = 1;
@@ -132,10 +126,6 @@ export class HoloScene {
   get partCount() {
     return this.parts ? this.parts.length : 0;
   }
-  get shownExplode() {
-    return this.explode * this.intensity;
-  }
-
   resize() {
     const W = innerWidth, H = innerHeight;
     this.W = W;
@@ -179,7 +169,7 @@ export class HoloScene {
       if (!partData) continue;
       const instances = [];
       if (cloud && (cloud.length || cloud.p?.length)) {
-        instances.push({ cloud, dir: partData.dir || [0, 0, 0], anchor: partData.anchor || [0, 0, 0] });
+        instances.push({ cloud, anchor: partData.anchor || [0, 0, 0] });
       }
       def.extraParts.push({
         name: partData.name || 'Part',
@@ -211,7 +201,6 @@ export class HoloScene {
     }
 
     const mn = [1e9,1e9,1e9], mx = [-1e9,-1e9,-1e9];
-    const mn2 = [1e9,1e9,1e9], mx2 = [-1e9,-1e9,-1e9];
     for (const p of parts) {
       for (const inst of p.instances || []) {
         const q = inst.cloud?.p || inst.cloud;
@@ -220,19 +209,15 @@ export class HoloScene {
         for (let k = 0; k < len; k += 3) {
           for (let a = 0; a < 3; a++) {
             const v = q[k + a];
-            const w = v + (inst.dir?.[a] || 0);
             if (v < mn[a]) mn[a] = v;
             if (v > mx[a]) mx[a] = v;
-            if (w < mn2[a]) mn2[a] = w;
-            if (w > mx2[a]) mx2[a] = w;
           }
         }
       }
     }
-    const c = [0,1,2].map(a => (mn[a]+mx[a]+mn2[a]+mx2[a])/4);
+    const c = [0,1,2].map(a => (mn[a]+mx[a])/2);
 
     const pos = new Float32Array(total * 3);
-    const dir = new Float32Array(total * 3);
     const col = new Float32Array(total * 3);
     const part = new Float32Array(total);
     const rnd = new Float32Array(total * 3);
@@ -246,14 +231,13 @@ export class HoloScene {
       const samples = [];
       (p.instances || []).forEach(inst => {
         const a = inst.anchor || [0, 0, 0];
-        anchors.push({ a: [a[0] - c[0], a[1] - c[1], a[2] - c[2]], d: inst.dir || [0,0,0] });
+        anchors.push({ a: [a[0] - c[0], a[1] - c[1], a[2] - c[2]] });
         const q = inst.cloud?.p || inst.cloud;
         if (!q) return;
         const n = inst.cloud?.n || (q.length / 3);
         for (let i = 0; i < n; i++, k++) {
           const x = q[i*3] - c[0], y = q[i*3+1] - c[1], z = q[i*3+2] - c[2];
           pos.set([x,y,z], k*3);
-          dir.set(inst.dir || [0,0,0], k*3);
           const br = 0.78 + 0.32 * Math.random();
           col.set([rgb[0]*br, rgb[1]*br, rgb[2]*br], k*3);
           part[k] = pi;
@@ -261,14 +245,13 @@ export class HoloScene {
           const s = Math.sqrt(1-uu*uu);
           rnd.set([s*Math.cos(tt)*rr, uu*rr, s*Math.sin(tt)*rr], k*3);
           seed[k] = Math.random();
-          maxR = Math.max(maxR, Math.hypot(x+(inst.dir?.[0]||0), y+(inst.dir?.[1]||0), z+(inst.dir?.[2]||0)));
-          if (Math.random() < 160 / Math.max(160, n)) samples.push(x,y,z,(inst.dir?.[0]||0),(inst.dir?.[1]||0),(inst.dir?.[2]||0));
+          maxR = Math.max(maxR, Math.hypot(x, y, z));
+          if (Math.random() < 160 / Math.max(160, n)) samples.push(x, y, z);
         }
       });
-      let cx = 0, cy = 0, cz = 0, dx = 0, dy = 0, dz = 0, sn = 0;
-      for (let si = 0; si < samples.length; si += 6) {
+      let cx = 0, cy = 0, cz = 0, sn = 0;
+      for (let si = 0; si < samples.length; si += 3) {
         cx += samples[si]; cy += samples[si + 1]; cz += samples[si + 2];
-        dx += samples[si + 3]; dy += samples[si + 4]; dz += samples[si + 5];
         sn++;
       }
       const inv = sn ? 1 / sn : 0;
@@ -279,14 +262,12 @@ export class HoloScene {
         anchors,
         samples: new Float32Array(samples),
         center: [cx * inv, cy * inv, cz * inv],
-        dir: [dx * inv, dy * inv, dz * inv],
         surface: p.surface || null,
       });
     });
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('aDir', new THREE.BufferAttribute(dir, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('aPart', new THREE.BufferAttribute(part, 1));
     geo.setAttribute('aRand', new THREE.BufferAttribute(rnd, 3));
@@ -401,11 +382,9 @@ export class HoloScene {
   partCenter(i) {
     const part = this.parts?.[i];
     if (!part) return [0, 0, 0];
-    const e = this.shownExplode;
     const off = this.uniforms.uOff.value[i];
     const c = part.center || [0, 0, 0];
-    const d = part.dir || [0, 0, 0];
-    return [c[0] + d[0] * e + off.x, c[1] + d[1] * e + off.y, c[2] + d[2] * e + off.z];
+    return [c[0] + off.x, c[1] + off.y, c[2] + off.z];
   }
 
   lockParts(a, b) {
@@ -476,15 +455,14 @@ export class HoloScene {
   }
 
   pick(px, py, maxDist = 100) {
-    const e = this.shownExplode;
     const v = new THREE.Vector3();
     let best = -1, bd = maxDist;
     this.group.updateMatrixWorld(true);
     this.parts?.forEach((p, i) => {
       const s = p.samples;
       const off = this.uniforms.uOff.value[i];
-      for (let k = 0; k < s.length; k += 6) {
-        const sp = this._toScreen([s[k]+s[k+3]*e+off.x, s[k+1]+s[k+4]*e+off.y, s[k+2]+s[k+5]*e+off.z], v);
+      for (let k = 0; k < s.length; k += 3) {
+        const sp = this._toScreen([s[k]+off.x, s[k+1]+off.y, s[k+2]+off.z], v);
         const d = Math.hypot(sp.x-px, sp.y-py);
         if (d < bd) { bd = d; best = i; }
       }
@@ -493,14 +471,12 @@ export class HoloScene {
   }
 
   labelPoints() {
-    const e = this.shownExplode;
     const v = new THREE.Vector3();
     this.group.updateMatrixWorld(true);
     return (this.parts || []).map((p, i) => {
       const a = p.anchors?.[0]?.a || [0,0,0];
-      const d = p.anchors?.[0]?.d || [0,0,0];
       const off = this.uniforms.uOff.value[i];
-      const s = this._toScreen([a[0]+d[0]*e+off.x, a[1]+d[1]*e+off.y, a[2]+d[2]*e+off.z], v);
+      const s = this._toScreen([a[0]+off.x, a[1]+off.y, a[2]+off.z], v);
       return { i, x: s.x, y: s.y, name: p.name, color: p.color };
     });
   }
@@ -512,7 +488,6 @@ export class HoloScene {
 
   update(dt, t) {
     this.idle += dt;
-    this.explode = damp(this.explode, this.explodeTarget, 5, dt);
     this.scale = damp(this.scale, this.scaleTarget, 6, dt);
     this.uniforms.uScatter.value = damp(this.uniforms.uScatter.value, this.scatterTarget, this.scatterTarget ? 7 : 3.2, dt);
     if (this.pending >= 0 && this.uniforms.uScatter.value > 0.97) {
@@ -534,7 +509,6 @@ export class HoloScene {
       const grabbed = this.offT[i].lengthSq() > 1e-6;
       off[i].lerp(this.offT[i], 1 - Math.exp(-(grabbed ? 16 : 4) * dt));
     }
-    this.uniforms.uExplode.value = this.explode * this.intensity;
     this.uniforms.uTime.value = t;
     this.solidParts.update(this.uniforms.uOff.value, this.hover, this.sel);
     this.group.rotation.set(this.rot.x, this.rot.y, this.rot.z, 'YXZ');

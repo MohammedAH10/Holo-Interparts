@@ -358,23 +358,9 @@ if (pcNameInput) {
   });
 }
 
-const rExplode = $('r-explode');
-const rInt = $('r-int');
-let draggingExplode = false;
-if (rExplode) rExplode.addEventListener('pointerdown', () => (draggingExplode = true));
-addEventListener('pointerup', () => (draggingExplode = false));
-if (rExplode) rExplode.addEventListener('input', () => { if (scene) scene.explodeTarget = rExplode.value / 100; });
-if (rInt) rInt.addEventListener('input', () => {
-  if (scene) scene.intensity = rInt.value / 100;
-  const vInt = $('v-int');
-  if (vInt) vInt.textContent = rInt.value + '%';
-});
-
-const bExplode = $('b-explode');
 const bSpin = $('b-spin');
 const bReset = $('b-reset');
 const bNext = $('b-next');
-if (bExplode) bExplode.onclick = () => { if (scene) scene.explodeTarget = scene.explodeTarget > 0.5 ? 0 : 1; };
 if (bSpin) bSpin.onclick = () => {
   if (scene) {
     scene.autoSpin = !scene.autoSpin;
@@ -859,7 +845,6 @@ function control(t, dt) {
   const palmPx = { x: h.palm.x * W, y: h.palm.y * H };
 
   if (g === 'OPEN' || g === 'FIST' || g === 'NONE') {
-    scene.explodeTarget = g === 'FIST' ? 0 : clamp((h.openness - 0.12) / 0.78, 0, 1);
     if (g === 'FIST' && t > lockCool) {
       const recent = t - lastTouched.t < 2.5 ? lastTouched.i : -1;
       const idx = recent >= 0 ? recent : (scene.sel >= 0 ? scene.sel : scene.hover);
@@ -880,8 +865,7 @@ function control(t, dt) {
     }
     if (h.rollDelta) scene.rollBy(h.rollDelta * 0.7);
     scene.setHover(-1);
-    setActive(g === 'NONE' ? 'MOVE' : g);
-    if (g === 'OPEN' && prev && Math.hypot(palmPx.x - prev.x, palmPx.y - prev.y) > 6) setActive('MOVE');
+    setActive('MOVE');
   } else {
     if (g === 'POINT') {
       const idx = scene.pick(h.tip.x * W, h.tip.y * H, 95);
@@ -957,10 +941,7 @@ addEventListener('wheel', (e) => {
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   if (!scene) return;
-  if (e.key === ' ') {
-    e.preventDefault();
-    scene.explodeTarget = scene.explodeTarget > 0.5 ? 0 : 1;
-  } else if (e.key === 'ArrowRight') scene.next(1);
+  if (e.key === 'ArrowRight') scene.next(1);
   else if (e.key === 'ArrowLeft') scene.next(-1);
   else if (e.key.toLowerCase() === 'r') scene.resetView();
   else if (e.key.toLowerCase() === 'u') { scene.unlockAll(); toast('Parts unlinked'); }
@@ -1029,15 +1010,6 @@ function drawRing(h) {
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
-    const e = clamp(scene.explode, 0, 1);
-    if (e > 0.01) {
-      ctx.shadowColor = 'rgba(255,255,255,0.9)';
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 4.5;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * e);
-      ctx.stroke();
-    }
   }
   ctx.restore();
 }
@@ -1065,8 +1037,7 @@ function drawZoom(a, b) {
 
 function drawLabels() {
   if (scene.uniforms.uScatter.value > 0.3) return;
-  const e = scene.hasSurface ? 1 : clamp((scene.shownExplode - 0.1) / 0.3, 0, 1);
-  if (e <= 0.01) return;
+  const e = 1;
   const pts = scene.labelPoints();
   const c = scene.centerScreen();
   const panelR = W > 900 && !ui.controlsHidden ? 310 : 0;
@@ -1160,13 +1131,6 @@ function frame(now) {
     perc = engine.update(hands, t, mapPoint, (video.videoWidth || 16) / (video.videoHeight || 9));
   }
   control(t, dt);
-  if (!draggingExplode && rExplode) {
-    rExplode.value = Math.round(clamp(scene.explode, 0, 1) * 100);
-    const vExp = $('v-explode');
-    if (vExp) vExp.textContent = Math.round(clamp(scene.explode, 0, 1) * 100) + '%';
-  }
-  const bExp = $('b-explode');
-  if (bExp) bExp.textContent = scene.explodeTarget > 0.5 ? 'Assemble' : 'Explode';
   scene.update(dt, t);
   drawOverlay();
   requestAnimationFrame(frame);
