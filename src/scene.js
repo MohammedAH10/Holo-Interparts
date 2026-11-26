@@ -292,7 +292,7 @@ export class HoloScene {
     geo.setAttribute('aRand', new THREE.BufferAttribute(rnd, 3));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 50);
-    const entry = { geo, meta, fit: FIT / Math.max(0.5, maxR), count: total, radius: Math.max(0.5, maxR) };
+    const entry = { geo, meta, fit: FIT / Math.max(0.5, maxR), count: total, radius: Math.max(0.5, maxR), sources: parts };
     this.cache.set(i, entry);
     return entry;
   }
@@ -305,6 +305,7 @@ export class HoloScene {
     this.points.frustumCulled = false;
     this.group.add(this.points);
     this.parts = g.meta;
+    this.partSources = g.sources || [];
     this.solidParts.setParts(this.parts);
     this.solidAll = this.parts.length > 0 && this.solidParts.count === this.parts.length;
     this.points.visible = !this.solidAll || !this.surfaceEnabled;
@@ -348,6 +349,23 @@ export class HoloScene {
   }
   setHover(i) { this.hover = i; this.uniforms.uHi.value = i; }
   setSel(i) { this.sel = i; this.uniforms.uSel.value = i; }
+  setPartName(i, value) {
+    if (!this.parts?.[i]) return false;
+    const name = String(value || '').trim().slice(0, 60);
+    if (!name) return false;
+    this.parts[i].name = name;
+    const source = this.partSources?.[i];
+    if (source) source.name = name;
+    return true;
+  }
+  setPartDesc(i, value) {
+    if (!this.parts?.[i]) return false;
+    const desc = String(value || '').trim().slice(0, 240);
+    this.parts[i].desc = desc;
+    const source = this.partSources?.[i];
+    if (source) source.desc = desc;
+    return true;
+  }
   rotateBy(dyaw, dpitch, dt = 1/60) {
     this.rot.y += dyaw;
     this.rot.x = clamp(this.rot.x + dpitch, -1.4, 1.4);

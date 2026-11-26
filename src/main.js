@@ -332,9 +332,25 @@ function showPart(i) {
   const pcName = $('pc-name');
   const pcDesc = $('pc-desc');
   const pcDot = $('pc-dot');
-  if (pcName) pcName.textContent = p ? p.name : 'No part selected';
+  if (pcName) {
+    pcName.disabled = !p;
+    pcName.value = p ? p.name : '';
+    pcName.placeholder = p ? 'Part title' : 'No part selected';
+  }
   if (pcDesc) pcDesc.textContent = p ? p.desc : 'Point at a part, or click one, to read what it does.';
   if (pcDot) pcDot.style.background = p ? p.color : '#555a70';
+}
+
+const pcNameInput = $('pc-name');
+if (pcNameInput) {
+  pcNameInput.addEventListener('input', () => {
+    const i = scene?.sel;
+    if (i !== undefined && i >= 0) scene.setPartName(i, pcNameInput.value);
+  });
+  pcNameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === 'Escape') pcNameInput.blur();
+    event.stopPropagation();
+  });
 }
 
 const rExplode = $('r-explode');
